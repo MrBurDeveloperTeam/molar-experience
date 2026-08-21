@@ -157,7 +157,7 @@ export function SharedCatMascot({
 
   return (
     <div
-      className="molar-cat-wrapper"
+      className="snabbb-molar-experience molar-cat-wrapper"
       style={{
         left: `${catPos.x}%`,
         top: `${catPos.y}%`,
