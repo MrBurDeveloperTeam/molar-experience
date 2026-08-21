@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronLeft, X } from 'lucide-react';
 import { CatSprite } from './internal/CatSprite';
+import { CAT_ENTRY_WALK_DURATION_MS } from './internal/timing';
 import type { SharedCatMascotProps } from './presentation';
 
 // Ported verbatim from Content Studio's CatMascot.jsx — click-to-move must
@@ -80,7 +81,7 @@ export function SharedCatMascot({
     // range to Content Studio's current effect.
     const destX = 20 + Math.random() * 60;
     const destY = 80 + Math.random() * 10;
-    const duration = 2.8;
+    const duration = CAT_ENTRY_WALK_DURATION_MS / 1000;
 
     lastMoveStartPos.current = { x: -10, y: 85 };
     lastMoveTarget.current = { x: destX, y: destY };
