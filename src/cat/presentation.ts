@@ -1,0 +1,52 @@
+/**
+ * Public Cat presentation contract.
+ *
+ * These types describe ONLY resolved, already-decided visual state — no
+ * Supabase, no candidate facts, no router, no localStorage/sessionStorage,
+ * no PersonalizedInsightBridge internals. The host's own local controller
+ * (dialogue arbitration, dismissal persistence, cross-tab sync, CTA
+ * business behavior) computes these values and passes them down; this
+ * package never re-derives or re-resolves any of it.
+ */
+
+/** One of the 6 selectable pets. Sprite assets/config are bundled inside
+ *  this package (see cat/internal/petSprites.ts) — the host only ever
+ *  passes the id string, never a URL. */
+export type SharedCatPetId = 'mallow' | 'silverbelt' | 'fastrat' | 'gulu' | 'munchkin' | 'mochi';
+
+export type CatDialoguePresentation =
+  | { kind: 'none' }
+  | {
+      /** Intro and Welcome Back share this exact visual treatment today —
+       *  a multi-step sequence with Back/Next/Close. */
+      kind: 'sequence';
+      steps: string[];
+      stepIndex: number;
+      onBack: () => void;
+      onNext: () => void;
+      onClose: () => void;
+    }
+  | {
+      /** The Phase-2B proactive/personalized reminder bubble — single
+       *  step, optional CTA, always has Close. */
+      kind: 'personalized';
+      message: string;
+      action?: { label: string; onClick: () => void };
+      onClose: () => void;
+    };
+
+export interface SharedCatMascotProps {
+  /** Pre-login/disabled mode: suppresses the ambient meow bubble and the
+   *  onCatClick callback, exactly as Content Studio's current CatMascot. */
+  disabled?: boolean;
+  petId?: string | null;
+  isSleeping?: boolean;
+  /** Defaults to `{ kind: 'none' }` — a host that hasn't wired dialogue
+   *  presentation yet still renders a valid, dialogue-less Cat. */
+  dialogue?: CatDialoguePresentation;
+  /** Ambient mood message bubble (e.g. "Normal"/"Hungry"/... state
+   *  messages). Only ever shown when `dialogue.kind === 'none'` and
+   *  `!disabled`. */
+  meowMessage?: string | null;
+  onCatClick?: () => void;
+}

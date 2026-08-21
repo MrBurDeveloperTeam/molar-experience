@@ -49,5 +49,6 @@ export default defineConfig({
   target: 'es2019',
   loader: {
     '.svg': 'file',
+    '.webp': 'file',
   },
 });
