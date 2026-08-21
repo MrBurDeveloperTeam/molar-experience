@@ -1,4 +1,4 @@
-// Public root entry: @snabbb/molar-experience
+// Public root entry: @mrburdeveloperteam/molar-experience
 export { MolarExperienceProvider, MolarExperienceLayer, useMolarExperienceConfig, useMolarExperienceConfigOptional } from './core';
 export type { MolarExperienceProviderProps, MolarExperienceLayerProps } from './core';
 export { SharedCatMascot } from './cat';

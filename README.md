@@ -1,4 +1,4 @@
-# @snabbb/molar-experience
+# @mrburdeveloperteam/molar-experience
 
 **Status: skeleton/foundation only.** This package does not yet contain
 product UI and does not yet replace any of the seven Snabbb apps' existing
@@ -59,12 +59,12 @@ enforced by the contracts in this package:
 ## Public imports
 
 ```ts
-import { MolarExperienceProvider, MolarExperienceLayer } from '@snabbb/molar-experience';
-import { SharedCatMascot } from '@snabbb/molar-experience/cat';
-import { SharedMolarAI } from '@snabbb/molar-experience/ai';
-import { SharedVirtualPet } from '@snabbb/molar-experience/pet';
-import type { DialogueCandidate, PetStats, MolarExperienceConfig } from '@snabbb/molar-experience/contracts';
-import '@snabbb/molar-experience/styles.css';
+import { MolarExperienceProvider, MolarExperienceLayer } from '@mrburdeveloperteam/molar-experience';
+import { SharedCatMascot } from '@mrburdeveloperteam/molar-experience/cat';
+import { SharedMolarAI } from '@mrburdeveloperteam/molar-experience/ai';
+import { SharedVirtualPet } from '@mrburdeveloperteam/molar-experience/pet';
+import type { DialogueCandidate, PetStats, MolarExperienceConfig } from '@mrburdeveloperteam/molar-experience/contracts';
+import '@mrburdeveloperteam/molar-experience/styles.css';
 ```
 
 No other import path is supported — internal directories (`*/internal/`,

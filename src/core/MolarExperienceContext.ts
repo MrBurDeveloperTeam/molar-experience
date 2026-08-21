@@ -16,7 +16,7 @@ export function useMolarExperienceConfig(): MolarExperienceConfig {
   const config = useContext(MolarExperienceContext);
   if (!config) {
     throw new Error(
-      '[@snabbb/molar-experience] A domain component was rendered outside <MolarExperienceProvider>.'
+      '[@mrburdeveloperteam/molar-experience] A domain component was rendered outside <MolarExperienceProvider>.'
     );
   }
   return config;
