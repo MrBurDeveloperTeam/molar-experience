@@ -1,0 +1,43 @@
+/**
+ * Package-owned compiled CSS foundation.
+ *
+ * Everything is scoped under the .snabbb-molar-experience root class so
+ * nothing here can ever restyle a host's own `body`, `button`, `input`,
+ * `p`, `div`, or any other unscoped/global selector. Hosts do NOT need
+ * Tailwind, PostCSS, or any build-time class scanning to use this file —
+ * it is plain, pre-compiled CSS, imported once.
+ *
+ * CSS variables below are placeholders establishing the --molar-* naming
+ * convention (deliberately renamed from Content Studio's own --cp-* tokens
+ * to avoid any collision with a host that happens to define --cp-* itself).
+ * The full Content Studio token set/theme is NOT reproduced yet — this
+ * phase only proves the scoped, namespaced delivery mechanism works.
+ */
+
+.snabbb-molar-experience {
+  --molar-bg: #ffffff;
+  --molar-surface: #f4f4f5;
+  --molar-text-primary: #0f172a;
+  --molar-text-secondary: #475569;
+  --molar-brand: #2a9d8f;
+  --molar-brand-hover: #1f7a6f;
+  --molar-border: #e2e8f0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .snabbb-molar-experience:not([data-molar-theme='light']) {
+    --molar-bg: #0f172a;
+    --molar-surface: #1e293b;
+    --molar-text-primary: #f8fafc;
+    --molar-text-secondary: #cbd5e1;
+    --molar-border: #334155;
+  }
+}
+
+.snabbb-molar-experience[data-molar-theme='dark'] {
+  --molar-bg: #0f172a;
+  --molar-surface: #1e293b;
+  --molar-text-primary: #f8fafc;
+  --molar-text-secondary: #cbd5e1;
+  --molar-border: #334155;
+}

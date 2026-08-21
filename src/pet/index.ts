@@ -1,0 +1,1 @@
+export { SharedVirtualPet } from './SharedVirtualPet';
