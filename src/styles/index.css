@@ -876,3 +876,112 @@
 .snabbb-molar-experience .molar-chat-md-li--model::marker {
   color: #10b981;
 }
+
+/* ==========================================================================
+   Virtual Pet presentation — ported verbatim from Content Studio's
+   src/app/globals.css. Almost all of Virtual Pet's own visuals come from
+   inline Tailwind utility classNames (compiled separately — see
+   scripts/postbuild.mjs and src/pet/tailwind-entry.css); these are the
+   handful of custom (non-Tailwind) keyframes/classes those components
+   also reference directly, plus the `.pet-interface` typography/radius
+   overrides `SharedVirtualPet` applies to its whole subtree. Do not
+   "improve" these — values are the exact ones already in use.
+   ========================================================================== */
+
+.snabbb-molar-experience .pet-interface,
+.snabbb-molar-experience .pet-interface * {
+  font-family: 'Fredoka', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  letter-spacing: 0;
+}
+
+.snabbb-molar-experience .pet-interface {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.snabbb-molar-experience .pet-interface .rounded-sm {
+  border-radius: 0.125rem !important;
+}
+.snabbb-molar-experience .pet-interface .rounded-md {
+  border-radius: 0.375rem !important;
+}
+.snabbb-molar-experience .pet-interface .rounded-lg {
+  border-radius: 0.5rem !important;
+}
+.snabbb-molar-experience .pet-interface .rounded-xl {
+  border-radius: 0.75rem !important;
+}
+.snabbb-molar-experience .pet-interface .rounded-2xl {
+  border-radius: 1rem !important;
+}
+.snabbb-molar-experience .pet-interface .rounded-3xl {
+  border-radius: 1.5rem !important;
+}
+.snabbb-molar-experience .pet-interface .rounded-full {
+  border-radius: 9999px !important;
+}
+
+.snabbb-molar-experience .no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.snabbb-molar-experience .no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes molar-pet-breathe {
+  0%, 100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.02) translateY(-2px);
+  }
+}
+
+@keyframes molar-pet-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-15px);
+  }
+}
+
+@keyframes molar-pet-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes molar-pet-poop-reward {
+  0% {
+    transform: translateY(8px) scale(0.92);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-34px) scale(1);
+    opacity: 0;
+  }
+}
+
+.snabbb-molar-experience .animate-breathe {
+  animation: molar-pet-breathe 3s infinite ease-in-out;
+}
+
+.snabbb-molar-experience .animate-bounce-custom {
+  animation: molar-pet-bounce 0.6s ease-in-out;
+}
+
+.snabbb-molar-experience .animate-float {
+  animation: molar-pet-float 4s infinite ease-in-out;
+}
+
+.snabbb-molar-experience .animate-poop-reward {
+  animation: molar-pet-poop-reward 1.6s ease-out forwards;
+}

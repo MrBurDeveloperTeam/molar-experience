@@ -15,7 +15,6 @@ export type {
   PetStats,
   PetIdentity,
   PetInventoryItem,
-  PetInventory,
   PetCatalogItem,
   FoodItem,
   ToyItem,
