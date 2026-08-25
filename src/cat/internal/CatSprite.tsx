@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { getCatSpriteConfig } from './petSprites';
+import { getCatSpriteConfig, type CatPetId } from './petSprites';
 
 // Sprite-grid constants shared by every pet's spritesheet (same 8-col x
 // 9-row cell layout for all 6 — only which row/frame-count/duration a given
@@ -29,6 +29,9 @@ export interface CatSpriteProps {
   isSleeping: boolean;
   onHoverStart?: () => void;
   onHoverEnd?: () => void;
+  /** Host override for one or more pets' sprite sheet URL, keyed by pet
+   *  id. Missing entries fall back to this package's own bundled default. */
+  spriteSheetUrls?: Partial<Record<CatPetId, string>>;
 }
 
 /**
@@ -47,8 +50,9 @@ export function CatSprite({
   isSleeping,
   onHoverStart,
   onHoverEnd,
+  spriteSheetUrls,
 }: CatSpriteProps) {
-  const sprite = getCatSpriteConfig(petId);
+  const sprite = getCatSpriteConfig(petId, spriteSheetUrls);
 
   const shouldSleep = isSleeping && !isWalking && !isMeowing;
   const shouldReview = isHovered && !isWalking && !shouldSleep;

@@ -8,6 +8,34 @@
  * they stay defined here, unchanged.
  */
 export type { PetStats, FoodItem, ToyItem, BedItem } from '../../contracts/pet';
+import type { PetId } from './petOptions';
+
+/**
+ * Optional host override for this package's file-backed Virtual Pet
+ * assets. Every field is optional and independently overridable; any
+ * asset not covered by an override falls back to this package's own
+ * bundled default — exact 0.5.0 behavior when `assetUrls` is omitted
+ * entirely. Intended for hosts whose bundler cannot statically
+ * discover/copy this package's internally-bundled asset references (e.g.
+ * Next.js/Turbopack); Vite-based hosts do not need this.
+ */
+export interface PetAssetUrls {
+  /** Pet spritesheet overrides, keyed by pet id — same identity space and
+   *  same 6 assets as `SharedCatMascot`'s `spriteSheetUrls`. */
+  spriteSheets?: Partial<Record<PetId, string>>;
+  /** Bed shop-item image overrides. */
+  beds?: {
+    grey?: string;
+    red?: string;
+    purple?: string;
+  };
+  /** Bathroom-care tool/effect image overrides. */
+  care?: {
+    poop?: string;
+    shower?: string;
+    soap?: string;
+  };
+}
 
 export enum RoomType {
   BEDROOM = 'BEDROOM',

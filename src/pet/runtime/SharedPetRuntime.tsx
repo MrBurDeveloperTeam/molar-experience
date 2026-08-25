@@ -21,7 +21,7 @@
  * reads or writes it (dead state in the source being ported from).
  */
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { PetStats, RoomType, FoodItem } from '../internal/types';
+import { PetStats, RoomType, FoodItem, type PetAssetUrls } from '../internal/types';
 import { BED_ITEMS, INITIAL_STATS, XP_TO_LEVEL_UP, INITIAL_INVENTORY, FOOD_ITEMS, TOY_ITEMS } from '../internal/constants';
 import { DEFAULT_PET_ID, normalizePetId } from '../internal/petOptions';
 import type { PetRepository } from '../../contracts/petRepository';
@@ -87,6 +87,7 @@ interface GameStateContextType {
     isFoodLoading: boolean;
     currencyCode: string;
     currencyRate: number;
+    assetUrls?: PetAssetUrls;
 }
 
 const GameStateContext = createContext<GameStateContextType | undefined>(undefined);
@@ -106,6 +107,10 @@ export interface SharedPetProviderProps {
      *  entirely in the host's own wrapper, exactly as
      *  `VirtualPetContainer`'s `detectAndLogVisit` does today. */
     currencyCode?: string;
+    /** Optional host override for this package's file-backed static
+     *  assets (pet spritesheets, beds, bathroom-care images). Omitted
+     *  entirely reproduces exact 0.5.0 behavior. */
+    assetUrls?: PetAssetUrls;
 }
 
 export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
@@ -113,6 +118,7 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
     userId,
     repository,
     currencyCode: initialCurrencyCode = DEFAULT_CURRENCY_CODE,
+    assetUrls,
 }) => {
     const [stats, setStats] = useState<PetStats>(INITIAL_STATS);
     const [petName, _setPetName] = useState(DEFAULT_PET_ID);
@@ -578,6 +584,7 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
             isFoodLoading,
             currencyCode,
             currencyRate,
+            assetUrls,
         }}>
             {children}
         </GameStateContext.Provider>

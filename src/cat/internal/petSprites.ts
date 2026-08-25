@@ -120,6 +120,12 @@ export function normalizeCatPetId(value?: string | null): CatPetId {
     : DEFAULT_CAT_PET_ID;
 }
 
-export function getCatSpriteConfig(petId?: string | null): CatSpriteConfig {
-  return CAT_SPRITE_CONFIG[normalizeCatPetId(petId)];
+export function getCatSpriteConfig(
+  petId?: string | null,
+  spriteSheetUrlOverrides?: Partial<Record<CatPetId, string>>
+): CatSpriteConfig {
+  const normalizedId = normalizeCatPetId(petId);
+  const config = CAT_SPRITE_CONFIG[normalizedId];
+  const override = spriteSheetUrlOverrides?.[normalizedId];
+  return override ? { ...config, spriteSheetUrl: override } : config;
 }

@@ -10,6 +10,7 @@
 import React, { useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { FoodItem, ToolType } from '../types';
+import { useGameState } from '../../runtime/SharedPetRuntime';
 import soapUrl from '../../../assets/pet/soap.png';
 import showerUrl from '../../../assets/pet/shower.png';
 
@@ -98,12 +99,18 @@ interface BathroomMenuProps {
     isDirty?: boolean;
 }
 
-const BATHROOM_TOOL_ICONS: Record<ToolType, { src: string; alt: string }> = {
-    soap: { src: soapUrl, alt: 'Soap' },
-    shower: { src: showerUrl, alt: 'Shower' },
-};
+const getBathroomToolIcons = (
+    careOverrides?: { soap?: string; shower?: string }
+): Record<ToolType, { src: string; alt: string }> => ({
+    soap: { src: careOverrides?.soap ?? soapUrl, alt: 'Soap' },
+    shower: { src: careOverrides?.shower ?? showerUrl, alt: 'Shower' },
+});
 
-export const BathroomMenu: React.FC<BathroomMenuProps> = ({ onDragStart, isSoapedUp, isDirty }) => (
+export const BathroomMenu: React.FC<BathroomMenuProps> = ({ onDragStart, isSoapedUp, isDirty }) => {
+    const { assetUrls } = useGameState();
+    const BATHROOM_TOOL_ICONS = getBathroomToolIcons(assetUrls?.care);
+
+    return (
     <div className="absolute bottom-6 left-0 right-0 z-20 flex justify-center animate-in slide-in-from-bottom-10 fade-in duration-300">
         <div className="bg-white/60 backdrop-blur-xl p-4 rounded-2xl shadow-xl flex gap-6 border border-white/50 items-end">
             {(['soap'] as const).map((tool) => {
@@ -155,7 +162,8 @@ export const BathroomMenu: React.FC<BathroomMenuProps> = ({ onDragStart, isSoape
             </div>
         </div>
     </div>
-);
+    );
+};
 
 interface GamesMenuProps {
     onStartGame: (gameId: string) => void;

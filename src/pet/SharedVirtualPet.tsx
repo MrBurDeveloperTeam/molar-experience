@@ -41,7 +41,9 @@ import { SharedPetProvider, useGameState } from './runtime/SharedPetRuntime';
 import { PetRoom } from './internal/PetRoom';
 import { GamePage } from './internal/components/GamePage';
 import PetAdoptionModal from './internal/components/PetAdoptionModal';
-import { RoomType } from './internal/types';
+import { RoomType, type PetAssetUrls } from './internal/types';
+
+export type { PetAssetUrls };
 
 const LANDSCAPE_GAME_IDS = new Set<string>(['paccat', 'tetris']);
 
@@ -245,6 +247,10 @@ export interface SharedVirtualPetProps {
    *  this is host-specific/Supabase-coupled and stays entirely in the
    *  host's own composition wrapper. Defaults to `'USD'`. */
   currencyCode?: string;
+  /** Optional host override for this package's file-backed static
+   *  assets (pet spritesheets, beds, bathroom-care images). Omitted
+   *  entirely reproduces exact 0.5.0 behavior. */
+  assetUrls?: PetAssetUrls;
 }
 
 /**
@@ -260,7 +266,7 @@ export interface SharedVirtualPetProps {
  * Phase 2 skeleton assumed before this phase's code was written) avoids
  * requiring a host to introduce a provider it doesn't otherwise need.
  */
-export function SharedVirtualPet({ isOpen, onClose, repository, userId, currencyCode }: SharedVirtualPetProps) {
+export function SharedVirtualPet({ isOpen, onClose, repository, userId, currencyCode, assetUrls }: SharedVirtualPetProps) {
   useEffect(() => {
     const root = document.documentElement;
     if (isOpen) {
@@ -281,7 +287,7 @@ export function SharedVirtualPet({ isOpen, onClose, repository, userId, currency
   return (
     <div className="snabbb-molar-experience fixed left-0 top-0 z-[1000] h-dvh w-screen bg-black animate-in fade-in duration-200">
       <div className="w-full h-full relative">
-        <SharedPetProvider repository={repository} userId={userId} currencyCode={currencyCode}>
+        <SharedPetProvider repository={repository} userId={userId} currencyCode={currencyCode} assetUrls={assetUrls}>
           <VirtualPetContent onClose={onClose} />
         </SharedPetProvider>
       </div>

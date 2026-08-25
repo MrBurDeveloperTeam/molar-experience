@@ -62,6 +62,7 @@ export function SharedCatMascot({
   dialogue = { kind: 'none' },
   meowMessage = null,
   onCatClick,
+  spriteSheetUrls,
 }: SharedCatMascotProps) {
   const [catPos, setCatPos] = useState({ x: -10, y: 85 });
   const [isWalking, setIsWalking] = useState(false);
@@ -300,6 +301,7 @@ export function SharedCatMascot({
           isSleeping={isSleeping}
           onHoverStart={() => setIsHovered(true)}
           onHoverEnd={() => setIsHovered(false)}
+          spriteSheetUrls={spriteSheetUrls}
         />
       </div>
     </div>

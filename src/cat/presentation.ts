@@ -49,4 +49,11 @@ export interface SharedCatMascotProps {
    *  `!disabled`. */
   meowMessage?: string | null;
   onCatClick?: () => void;
+  /** Optional host override for one or more pets' sprite sheet image URL,
+   *  keyed by pet id. Any id omitted (or the prop omitted entirely) falls
+   *  back to this package's own bundled default asset — exact 0.5.0
+   *  behavior. Intended for hosts whose bundler cannot statically
+   *  discover/copy this package's internally-bundled asset references
+   *  (e.g. Next.js/Turbopack); Vite-based hosts do not need this. */
+  spriteSheetUrls?: Partial<Record<SharedCatPetId, string>>;
 }

@@ -27,4 +27,10 @@ export interface SharedMolarAIProps {
    *  welcome state. Omit any field to fall back to the package's own
    *  generic default copy/prompts. */
   emptyState?: MolarChatEmptyState;
+  /** Optional host override for the Molar logo image URL. Omitted falls
+   *  back to this package's own bundled default asset — exact 0.5.0
+   *  behavior. Intended for hosts whose bundler cannot statically
+   *  discover/copy this package's internally-bundled asset reference
+   *  (e.g. Next.js/Turbopack); Vite-based hosts do not need this. */
+  logoUrl?: string;
 }

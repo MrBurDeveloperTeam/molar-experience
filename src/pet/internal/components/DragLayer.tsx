@@ -5,6 +5,7 @@
  */
 import React from 'react';
 import { FoodItem, ToolType, Bubble } from '../types';
+import { useGameState } from '../../runtime/SharedPetRuntime';
 import soapUrl from '../../../assets/pet/soap.png';
 import showerUrl from '../../../assets/pet/shower.png';
 
@@ -17,10 +18,12 @@ interface DragLayerProps {
     isSoapedUp?: boolean;
 }
 
-const TOOL_ICONS: Record<ToolType, { src: string; alt: string }> = {
-    soap: { src: soapUrl, alt: 'Soap' },
-    shower: { src: showerUrl, alt: 'Shower' },
-};
+const getToolIcons = (
+    careOverrides?: { soap?: string; shower?: string }
+): Record<ToolType, { src: string; alt: string }> => ({
+    soap: { src: careOverrides?.soap ?? soapUrl, alt: 'Soap' },
+    shower: { src: careOverrides?.shower ?? showerUrl, alt: 'Shower' },
+});
 
 const SHOWER_DROPLETS = [
     { left: 22, top: 0, width: 2, height: 15, delay: 0, duration: 0.72, drift: -8, opacity: 0.86 },
@@ -49,6 +52,9 @@ const SHOWER_DROPLETS = [
 ];
 
 const DragLayer: React.FC<DragLayerProps> = ({ draggedItem, draggedTool, dragPos, bubbles, isHoveringPet, isSoapedUp }) => {
+    const { assetUrls } = useGameState();
+    const TOOL_ICONS = getToolIcons(assetUrls?.care);
+
     if (!draggedItem && !draggedTool) return null;
 
     return (

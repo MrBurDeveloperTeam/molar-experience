@@ -141,6 +141,11 @@ export const normalizePetId = (value?: string | null): PetId => {
   return PET_OPTIONS.some((pet) => pet.id === value) ? (value as PetId) : DEFAULT_PET_ID;
 };
 
-export const getPetOption = (value?: string | null): PetOption => {
-  return PET_OPTIONS.find((pet) => pet.id === normalizePetId(value)) || PET_OPTIONS[0];
+export const getPetOption = (
+  value?: string | null,
+  spriteSheetUrlOverrides?: Partial<Record<PetId, string>>
+): PetOption => {
+  const option = PET_OPTIONS.find((pet) => pet.id === normalizePetId(value)) || PET_OPTIONS[0];
+  const override = spriteSheetUrlOverrides?.[option.id];
+  return override ? { ...option, spriteSheetUrl: override } : option;
 };

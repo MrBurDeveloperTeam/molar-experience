@@ -52,9 +52,9 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
     isPlaying, setIsPlaying,
     inventory, buyItem, consumeItem,
     addXP, activeBallId, setActiveBallId, activeBedId, setActiveBedId,
-    foodItems, isFoodLoading, currencyRate
+    foodItems, isFoodLoading, currencyRate, assetUrls
   } = useGameState();
-  const activePet = getPetOption(petName);
+  const activePet = getPetOption(petName, assetUrls?.spriteSheets);
 
   const {
     ballPos, setBallPos,
@@ -209,9 +209,15 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
     const fallback = BED_ITEMS.find((bed) => bed.id === id);
     if (!shopBed && !fallback) return null;
 
+    const bedOverride =
+      id === 'bed_grey' ? assetUrls?.beds?.grey :
+      id === 'bed_red' ? assetUrls?.beds?.red :
+      id === 'bed_purple' ? assetUrls?.beds?.purple :
+      undefined;
+
     return {
       id,
-      src: shopBed?.imageSrc || fallback?.src || '',
+      src: shopBed?.imageSrc || bedOverride || fallback?.src || '',
       energyGain: shopBed?.energyGain || fallback?.energyGain || 1,
     };
   };
@@ -826,7 +832,7 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
             title="+5 coins"
           >
             <img
-              src={poopUrl}
+              src={assetUrls?.care?.poop ?? poopUrl}
               alt=""
               draggable={false}
               className="h-[80px] w-[80px] object-contain drop-shadow-xl"
