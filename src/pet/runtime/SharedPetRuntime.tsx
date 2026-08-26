@@ -147,6 +147,92 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
 
     const isHydrated = useRef(false);
     const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Whether a debounced save is currently scheduled and has NOT yet
+    // fired — set true the instant a save is (re)scheduled, and false the
+    // instant the timer actually starts running it (before the async work
+    // begins, closing the window where an unmount during that async work
+    // could otherwise be mistaken for "still pending"). The unmount-only
+    // flush effect below only acts while this is true, so a save that
+    // already fired is never re-persisted merely because the component
+    // later unmounts.
+    const pendingSaveRef = useRef(false);
+    // Always holds the exact payload a debounced save would persist for
+    // the CURRENT render — reassigned unconditionally on every render
+    // (not inside an effect), so it can never lag behind React state the
+    // way a value captured once in an effect's dependency-triggered
+    // closure could. This is what the unmount-only flush effect reads:
+    // that effect's own cleanup has an empty dependency array (so it
+    // never itself re-runs on state changes), and therefore cannot close
+    // over "latest" state directly — reading it from this ref instead is
+    // what lets the flush use the true final state right up to the
+    // moment of unmount rather than whatever state existed when this
+    // component first mounted.
+    const latestPersistPayloadRef = useRef({
+        stats, petName, hasAdoptedPet, inventory, isSleeping, activeBallId, activeBedId, userId, repository,
+    });
+    latestPersistPayloadRef.current = {
+        stats, petName, hasAdoptedPet, inventory, isSleeping, activeBallId, activeBedId, userId, repository,
+    };
+
+    // The exact persistence body previously inlined in the debounce
+    // timeout callback, extracted so both the normal debounced timer AND
+    // the real-unmount flush (added below) can invoke the identical
+    // sequence instead of duplicating it.
+    const persistPetState = async (payload: typeof latestPersistPayloadRef.current) => {
+        const { stats, petName, hasAdoptedPet, inventory, isSleeping, activeBallId, activeBedId, userId, repository } = payload;
+
+        localStorage.setItem('pet_stats', JSON.stringify(stats));
+        if (hasAdoptedPet) {
+            localStorage.setItem('pet_name', petName);
+            localStorage.setItem(PET_ADOPTION_CONFIRMED_KEY, 'true');
+        } else {
+            localStorage.removeItem('pet_name');
+            localStorage.removeItem(PET_ADOPTION_CONFIRMED_KEY);
+        }
+        localStorage.setItem('pet_active_ball', activeBallId);
+        if (activeBedId) {
+            localStorage.setItem(ACTIVE_BED_KEY, activeBedId);
+        } else {
+            localStorage.removeItem(ACTIVE_BED_KEY);
+        }
+        localStorage.setItem('pet_inventory', JSON.stringify(inventory));
+        localStorage.setItem(PET_SLEEPING_KEY, String(isSleeping));
+        localStorage.setItem('pet_last_saved_at', new Date().toISOString());
+
+        if (userId) {
+            try {
+                const snapshot: PetSaveSnapshot = {
+                    globalUserId: userId,
+                    stats,
+                    identity: {
+                        petName: hasAdoptedPet ? petName : '',
+                        selectedPetId: petName,
+                        isSleeping,
+                        activeBallId,
+                        activeBedId,
+                    },
+                    updatedAt: new Date().toISOString(),
+                };
+                await repository.saveSnapshot(snapshot);
+
+                // Fast full sync for inventory: repository owns the
+                // delete-all-then-insert semantics (matches the
+                // original's `.delete().eq('user_id', userId)` then
+                // bulk insert exactly).
+                const combinedInventory: Record<string, number> = inventory;
+                const invRows = Object.entries(combinedInventory)
+                    .filter(([, qty]) => qty > 0)
+                    .map(([itemId, qty]) => ({
+                        itemId,
+                        quantity: TOY_ITEM_IDS.includes(itemId) ? 1 : qty,
+                    }));
+
+                await repository.saveInventory(userId, invRows);
+            } catch (e) {
+                console.error('Failed to sync to repository', e);
+            }
+        }
+    };
 
     // Fetch shop catalog from the host's repository
     useEffect(() => {
@@ -353,70 +439,61 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps -- ported unchanged: original ran once on mount
     }, []);
 
-    // Sync to repository / LocalStorage
+    // Sync to repository / LocalStorage — normal debounce lifecycle.
+    //
+    // This effect's cleanup runs on BOTH a dependency change (React tears
+    // down the previous effect instance before running the next one) AND
+    // on true unmount — there is no way to tell those two apart from
+    // inside this effect. It must therefore stay a pure
+    // cancel-and-reschedule: it only ever clears the pending timer, never
+    // flushes. The actual real-unmount flush lives in a SEPARATE effect
+    // below with an empty dependency array, whose cleanup React
+    // guarantees only ever runs once, on genuine unmount — never on a
+    // dependency-driven rerun of this effect.
     useEffect(() => {
         if (!isHydrated.current) return;
 
         if (saveTimeout.current) clearTimeout(saveTimeout.current);
+        pendingSaveRef.current = true;
 
-        saveTimeout.current = setTimeout(async () => {
-            localStorage.setItem('pet_stats', JSON.stringify(stats));
-            if (hasAdoptedPet) {
-                localStorage.setItem('pet_name', petName);
-                localStorage.setItem(PET_ADOPTION_CONFIRMED_KEY, 'true');
-            } else {
-                localStorage.removeItem('pet_name');
-                localStorage.removeItem(PET_ADOPTION_CONFIRMED_KEY);
-            }
-            localStorage.setItem('pet_active_ball', activeBallId);
-            if (activeBedId) {
-                localStorage.setItem(ACTIVE_BED_KEY, activeBedId);
-            } else {
-                localStorage.removeItem(ACTIVE_BED_KEY);
-            }
-            localStorage.setItem('pet_inventory', JSON.stringify(inventory));
-            localStorage.setItem(PET_SLEEPING_KEY, String(isSleeping));
-            localStorage.setItem('pet_last_saved_at', new Date().toISOString());
-
-            if (userId) {
-                try {
-                    const snapshot: PetSaveSnapshot = {
-                        globalUserId: userId,
-                        stats,
-                        identity: {
-                            petName: hasAdoptedPet ? petName : '',
-                            selectedPetId: petName,
-                            isSleeping,
-                            activeBallId,
-                            activeBedId,
-                        },
-                        updatedAt: new Date().toISOString(),
-                    };
-                    await repository.saveSnapshot(snapshot);
-
-                    // Fast full sync for inventory: repository owns the
-                    // delete-all-then-insert semantics (matches the
-                    // original's `.delete().eq('user_id', userId)` then
-                    // bulk insert exactly).
-                    const combinedInventory: Record<string, number> = inventory;
-                    const invRows = Object.entries(combinedInventory)
-                        .filter(([, qty]) => qty > 0)
-                        .map(([itemId, qty]) => ({
-                            itemId,
-                            quantity: TOY_ITEM_IDS.includes(itemId) ? 1 : qty,
-                        }));
-
-                    await repository.saveInventory(userId, invRows);
-                } catch (e) {
-                    console.error('Failed to sync to repository', e);
-                }
-            }
+        saveTimeout.current = setTimeout(() => {
+            // Claim the pending save before starting the async work so a
+            // component unmount that happens to land while this callback
+            // is mid-flight is never mistaken for "still pending" by the
+            // unmount-flush effect below (which would otherwise risk a
+            // duplicate save).
+            saveTimeout.current = null;
+            pendingSaveRef.current = false;
+            void persistPetState(latestPersistPayloadRef.current);
         }, 2000); // 2 second debounce
 
         return () => {
             if (saveTimeout.current) clearTimeout(saveTimeout.current);
         };
     }, [stats, petName, hasAdoptedPet, inventory, isSleeping, activeBallId, activeBedId, userId, repository]);
+
+    // Real-unmount-only flush. An effect with an empty dependency array
+    // mounts/unmounts exactly once per component instance in production
+    // (React's dev-only StrictMode double-invoke still can't create a
+    // false positive here: that synthetic probe fires before hydration
+    // or any state change has had a chance to schedule a save, so
+    // `pendingSaveRef.current` is still `false` at that point — there is
+    // nothing for this cleanup to flush during it). `key={userId}` at the
+    // host call site fully remounts this whole provider (and therefore
+    // every ref here, including this one) on a genuine account switch, so
+    // a flush triggered by that remount always uses the outgoing
+    // account's own refs/userId, never the incoming account's.
+    useEffect(() => {
+        return () => {
+            if (saveTimeout.current && pendingSaveRef.current) {
+                clearTimeout(saveTimeout.current);
+                saveTimeout.current = null;
+                pendingSaveRef.current = false;
+                void persistPetState(latestPersistPayloadRef.current);
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately empty: this must fire its cleanup ONLY on true unmount, never on a dependency-driven effect rerun (see comment above and PERSIST-3's phase notes).
+    }, []);
 
     useEffect(() => {
         if (!isHydrated.current) return;
