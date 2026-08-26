@@ -4,11 +4,19 @@
  * runtime instead of Content Studio's local context.
  */
 import React, { useState } from 'react';
-import { PET_OPTIONS, normalizePetId, type PetId } from '../petOptions';
+import { PET_OPTIONS, normalizePetId, getPetOption, type PetId } from '../petOptions';
 import { useGameState } from '../../runtime/SharedPetRuntime';
 
 const PetAdoptionModal: React.FC = () => {
-  const { hasAdoptedPet, isPetAdoptionReady, adoptPet } = useGameState();
+  // `assetUrls` is the same value SharedVirtualPet/SharedPetProvider
+  // already thread through the context for the main Pet-rendering path
+  // (see PetRoom.tsx's identical `getPetOption(petName,
+  // assetUrls?.spriteSheets)` call) — reused here rather than
+  // introducing a second, independent sprite-resolution path, so a host
+  // that supplies `assetUrls.spriteSheets` gets its override reflected
+  // in the adoption previews too, with the package's own bundled
+  // defaults remaining the fallback for hosts that don't.
+  const { hasAdoptedPet, isPetAdoptionReady, adoptPet, assetUrls } = useGameState();
   const [selectedPetId, setSelectedPetId] = useState<PetId>('mallow');
   const [confirmPetId, setConfirmPetId] = useState<PetId | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -59,6 +67,14 @@ const PetAdoptionModal: React.FC = () => {
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {PET_OPTIONS.map((pet) => {
             const isSelected = pet.id === selectedPetId;
+            // Resolves to the host's `assetUrls.spriteSheets[pet.id]`
+            // override when supplied, falling back to `pet.spriteSheetUrl`
+            // (the package's own bundled default) otherwise — the exact
+            // same resolution rule `getPetOption` already applies for the
+            // main Pet sprite, just applied per-card here since the
+            // adoption grid needs every option's preview at once, not
+            // only the currently-selected one.
+            const previewUrl = getPetOption(pet.id, assetUrls?.spriteSheets).spriteSheetUrl;
             return (
               <button
                 key={pet.id}
@@ -72,7 +88,7 @@ const PetAdoptionModal: React.FC = () => {
                   style={{
                     width: 52,
                     height: 56,
-                    backgroundImage: `url("${pet.spriteSheetUrl}")`,
+                    backgroundImage: `url("${previewUrl}")`,
                     backgroundRepeat: 'no-repeat',
                     backgroundSize: `${192 * 8 * 0.27}px ${208 * 9 * 0.27}px`,
                     backgroundPosition: '0 0',

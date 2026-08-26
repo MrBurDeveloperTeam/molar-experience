@@ -635,7 +635,7 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
       {/* Bedroom Lamp Switch */}
       {currentRoom === RoomType.BEDROOM && (
         <div
-          className="pointer-events-none absolute left-[72%] z-[5] flex -translate-x-1/2 flex-col items-center"
+          className="pointer-events-none absolute left-[28%] z-[5] flex -translate-x-1/2 flex-col items-center"
           style={{ top: 'env(safe-area-inset-top, 0px)' }}
         >
           <div className="h-[clamp(132px,20dvh,176px)] w-1 bg-slate-800/80" />
