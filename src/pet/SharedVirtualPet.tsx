@@ -237,11 +237,14 @@ export interface SharedVirtualPetProps {
   /** Host-local database adapter — see `PetRepository`'s own doc for why
    *  this package never ships a default implementation. */
   repository: PetRepository;
-  /** Opaque host-local user identifier (e.g. Content Studio's own
+  /** Opaque host-local authenticated owner ID (e.g. Content Studio's own
    *  Supabase auth uuid), or `null` when not logged in. Threaded straight
    *  through to `repository` calls, never parsed or reinterpreted — see
    *  `PetSaveSnapshot.globalUserId`'s doc in `contracts/pet.ts` for why
-   *  this is intentionally NOT a future cross-app `globalUserId`. */
+   *  this is intentionally NOT a future cross-app `globalUserId`. When
+   *  `null`, no repository calls are made and no Pet state is persisted
+   *  to localStorage either — the Pet runs in fully ephemeral,
+   *  in-memory-only guest mode for that page load. */
   userId: string | null;
   /** Host-resolved currency code (e.g. from IP geolocation) — resolving
    *  this is host-specific/Supabase-coupled and stays entirely in the

@@ -15,7 +15,7 @@ import { FoodMenu, BathroomMenu, GamesMenu } from './components/RoomMenus';
 import DragLayer from './components/DragLayer';
 import Ball from './components/Ball';
 import ShopModal from './components/ShopModal';
-import { useGameState } from '../runtime/SharedPetRuntime';
+import { useGameState, getPetStorageKey } from '../runtime/SharedPetRuntime';
 import { useBallPhysics } from './hooks/useBallPhysics';
 import LevelIndicator from './components/LevelIndicator';
 import CoinIndicator from './components/CoinIndicator';
@@ -44,6 +44,7 @@ interface PetRoomProps {
 export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
   // --- Custom Hooks for Logic ---
   const {
+    userId,
     stats, setStats,
     petName,
     currentRoom, setCurrentRoom,
@@ -54,6 +55,11 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
     addXP, activeBallId, setActiveBallId, activeBedId, setActiveBedId,
     foodItems, isFoodLoading, currencyRate, assetUrls
   } = useGameState();
+  // PERSIST-4: the poop-spawn timer is account-sensitive Pet room state
+  // (it gates the `POOP_REWARD_COINS` earn mechanic), so it goes through
+  // the same `getPetStorageKey` scoping as every other Pet cache key —
+  // see that helper's own doc comment in SharedPetRuntime.tsx.
+  const poopNextSpawnKey = getPetStorageKey(userId, POOP_NEXT_SPAWN_KEY);
   const activePet = getPetOption(petName, assetUrls?.spriteSheets);
 
   const {
@@ -239,7 +245,7 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const syncPoopVisibility = () => {
-      const nextSpawnAt = Number(localStorage.getItem(POOP_NEXT_SPAWN_KEY) || 0);
+      const nextSpawnAt = Number((poopNextSpawnKey ? localStorage.getItem(poopNextSpawnKey) : null) || 0);
       const now = Date.now();
 
       if (!nextSpawnAt || now >= nextSpawnAt) {
@@ -469,7 +475,7 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
     e.stopPropagation();
 
     const nextSpawnAt = Date.now() + POOP_RESPAWN_MS;
-    localStorage.setItem(POOP_NEXT_SPAWN_KEY, String(nextSpawnAt));
+    if (poopNextSpawnKey) localStorage.setItem(poopNextSpawnKey, String(nextSpawnAt));
     setIsPoopVisible(false);
     setShowPoopReward(false);
     window.setTimeout(() => setShowPoopReward(true), 0);

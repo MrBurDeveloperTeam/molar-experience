@@ -29,6 +29,12 @@ import type { PetSaveSnapshot } from '../../contracts/pet';
 
 const TOY_ITEM_IDS = TOY_ITEMS.map((toy) => toy.id);
 const ACTIVE_BED_KEY = 'pet_active_bed';
+// NOT account-scoped, deliberately: a one-time "have we already applied the
+// legacy default-bed migration on this browser" completion marker, not Pet
+// data. Left global/inert like every other pre-0.6.6 unscoped key (see
+// `getPetStorageKey`'s own doc comment) — it never holds anything
+// account-sensitive, so scoping it would add nothing to the cross-account
+// isolation guarantee this release exists to provide.
 const ACTIVE_BED_DEFAULT_MIGRATION_KEY = 'pet_active_bed_default_none_v1';
 const PET_SLEEPING_KEY = 'pet_is_sleeping';
 const PET_SLEEPING_UPDATED_AT_KEY = 'pet_is_sleeping_updated_at';
@@ -40,10 +46,57 @@ export const normalizeCurrencyCode = (currency?: string | null) => {
     return /^[A-Z]{3}$/.test(normalized) ? normalized : DEFAULT_CURRENCY_CODE;
 };
 
+// Every account-sensitive Pet browser-cache key funnels through here.
+// PERSIST-4: prior to this release, all Pet localStorage keys were bare,
+// account-agnostic strings ('pet_stats', 'pet_name', ...) — a second
+// account logging in on the same browser/origin could synchronously read
+// the FIRST account's cached Pet state before that second account's own
+// backend hydration resolved (see this release's own audit notes). Every
+// key is now namespaced by the exact `userId` the owning
+// `SharedPetProvider` instance was given, so account A's cache can never
+// be read, written, or cleared as account B's, and vice versa.
+//
+// Returns `null` — deliberately, not a shared 'anonymous' bucket — when
+// there is no authenticated `userId`. `SharedVirtualPetProps.userId` is a
+// real, reachable `string | null` (guest/logged-out usage is an
+// intentionally supported mode, not a theoretical edge case — see that
+// prop's own doc comment), and a single shared fallback namespace would
+// let two different logged-out sessions on the same browser/origin read
+// and clobber each other's Pet state — the exact class of bug this
+// release exists to close, just between guests instead of accounts. The
+// required invariant is narrower and simpler: NO authenticated identity
+// → NO account-sensitive Pet storage access at all. `read`/`write`/
+// `removePetStorage` below are the only call sites that ever touch
+// `localStorage` for these keys, and all three no-op when this returns
+// `null`, so a logged-out session's Pet state is memory-only for that
+// page load (matching the "no backend I/O either" half of the existing
+// guest-mode contract) rather than silently sharing state with any other
+// guest.
+//
+// Deliberately NOT a migration path either: this never reads the legacy
+// pre-0.6.6 bare keys, and nothing here copies a legacy value into a new
+// scoped key — see this release's own notes on why that would be unsafe
+// (the legacy value carries no trustworthy identity to migrate FROM).
+export const getPetStorageKey = (userId: string | null, key: string): string | null =>
+    userId ? `snabbb_pet:${userId}:${key}` : null;
+
+const readPetStorage = (userId: string | null, key: string): string | null => {
+    const storageKey = getPetStorageKey(userId, key);
+    return storageKey ? localStorage.getItem(storageKey) : null;
+};
+const writePetStorage = (userId: string | null, key: string, value: string): void => {
+    const storageKey = getPetStorageKey(userId, key);
+    if (storageKey) localStorage.setItem(storageKey, value);
+};
+const removePetStorage = (userId: string | null, key: string): void => {
+    const storageKey = getPetStorageKey(userId, key);
+    if (storageKey) localStorage.removeItem(storageKey);
+};
+
 const createStarterStats = (): PetStats => ({ ...INITIAL_STATS });
 const createStarterInventory = (): Record<string, number> => ({});
 
-const clearPetLocalStorage = () => {
+const clearPetLocalStorage = (userId: string | null) => {
     [
         'pet_stats',
         'pet_name',
@@ -51,15 +104,20 @@ const clearPetLocalStorage = () => {
         'pet_last_saved_at',
         'pet_active_ball',
         ACTIVE_BED_KEY,
-        ACTIVE_BED_DEFAULT_MIGRATION_KEY,
         PET_SLEEPING_KEY,
         PET_SLEEPING_UPDATED_AT_KEY,
         PET_ADOPTION_CONFIRMED_KEY,
-        'virtual_pet_bathroom_soap_inventory'
-    ].forEach((key) => localStorage.removeItem(key));
+    ].forEach((key) => removePetStorage(userId, key));
 };
 
 interface GameStateContextType {
+    /** Internal-only (never part of `SharedVirtualPetProps`, this
+     *  package's actual public surface) — exposed to internal consumers
+     *  like `PetRoom` solely so THEIR OWN account-sensitive localStorage
+     *  keys (e.g. the poop-spawn timer) can go through the same
+     *  `getPetStorageKey` scoping this runtime uses for its own keys,
+     *  without re-deriving or re-threading identity a second way. */
+    userId: string | null;
     stats: PetStats;
     setStats: React.Dispatch<React.SetStateAction<PetStats>>;
     petName: string;
@@ -94,12 +152,16 @@ const GameStateContext = createContext<GameStateContextType | undefined>(undefin
 
 export interface SharedPetProviderProps {
     children: React.ReactNode;
-    /** Opaque host-local user identifier (e.g. Content Studio's own
+    /** Opaque host-local authenticated owner ID (e.g. Content Studio's own
      *  Supabase auth uuid) — this phase intentionally keys persistence on
      *  the SAME per-host identity Content Studio already uses today, not
      *  a future cross-app `globalUserId`. `null` means "not logged in":
-     *  matches the original's exact behavior of skipping all repository
-     *  I/O and using localStorage-only state until a session exists. */
+     *  no repository I/O is performed, and (PERSIST-4) no
+     *  account-sensitive Pet localStorage is read or written either — a
+     *  logged-out session runs in fully ephemeral, in-memory-only guest
+     *  mode for that page load, never a persisted or shared cache (see
+     *  `getPetStorageKey`'s own doc comment for why a shared guest
+     *  namespace was deliberately removed). */
     userId: string | null;
     repository: PetRepository;
     /** Host-resolved currency code (e.g. from IP geolocation) — resolving
@@ -131,7 +193,7 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
     const [inventory, setInventory] = useState<Record<string, number>>(INITIAL_INVENTORY);
     const [isSleeping, setIsSleeping] = useState(() => {
         try {
-            return localStorage.getItem(PET_SLEEPING_KEY) === 'true';
+            return readPetStorage(userId, PET_SLEEPING_KEY) === 'true';
         } catch {
             return false;
         }
@@ -181,23 +243,23 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
     const persistPetState = async (payload: typeof latestPersistPayloadRef.current) => {
         const { stats, petName, hasAdoptedPet, inventory, isSleeping, activeBallId, activeBedId, userId, repository } = payload;
 
-        localStorage.setItem('pet_stats', JSON.stringify(stats));
+        writePetStorage(userId, 'pet_stats', JSON.stringify(stats));
         if (hasAdoptedPet) {
-            localStorage.setItem('pet_name', petName);
-            localStorage.setItem(PET_ADOPTION_CONFIRMED_KEY, 'true');
+            writePetStorage(userId, 'pet_name', petName);
+            writePetStorage(userId, PET_ADOPTION_CONFIRMED_KEY, 'true');
         } else {
-            localStorage.removeItem('pet_name');
-            localStorage.removeItem(PET_ADOPTION_CONFIRMED_KEY);
+            removePetStorage(userId, 'pet_name');
+            removePetStorage(userId, PET_ADOPTION_CONFIRMED_KEY);
         }
-        localStorage.setItem('pet_active_ball', activeBallId);
+        writePetStorage(userId, 'pet_active_ball', activeBallId);
         if (activeBedId) {
-            localStorage.setItem(ACTIVE_BED_KEY, activeBedId);
+            writePetStorage(userId, ACTIVE_BED_KEY, activeBedId);
         } else {
-            localStorage.removeItem(ACTIVE_BED_KEY);
+            removePetStorage(userId, ACTIVE_BED_KEY);
         }
-        localStorage.setItem('pet_inventory', JSON.stringify(inventory));
-        localStorage.setItem(PET_SLEEPING_KEY, String(isSleeping));
-        localStorage.setItem('pet_last_saved_at', new Date().toISOString());
+        writePetStorage(userId, 'pet_inventory', JSON.stringify(inventory));
+        writePetStorage(userId, PET_SLEEPING_KEY, String(isSleeping));
+        writePetStorage(userId, 'pet_last_saved_at', new Date().toISOString());
 
         if (userId) {
             try {
@@ -285,14 +347,17 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
     // Initial data load
     useEffect(() => {
         const init = async () => {
-            // Load from localStorage as fallback
-            const savedStats = localStorage.getItem('pet_stats');
-            const savedName = localStorage.getItem('pet_name');
-            const savedPetAdoptionConfirmed = localStorage.getItem(PET_ADOPTION_CONFIRMED_KEY) === 'true';
-            const savedInv = localStorage.getItem('pet_inventory');
-            const savedLastSavedAt = localStorage.getItem('pet_last_saved_at');
-            const savedSleeping = localStorage.getItem(PET_SLEEPING_KEY);
-            const savedSleepingUpdatedAt = localStorage.getItem(PET_SLEEPING_UPDATED_AT_KEY);
+            // Load from localStorage as fallback — scoped to THIS provider
+            // instance's own userId only (see `getPetStorageKey`'s doc
+            // comment); never reads another account's or a pre-0.6.6
+            // legacy unscoped key.
+            const savedStats = readPetStorage(userId, 'pet_stats');
+            const savedName = readPetStorage(userId, 'pet_name');
+            const savedPetAdoptionConfirmed = readPetStorage(userId, PET_ADOPTION_CONFIRMED_KEY) === 'true';
+            const savedInv = readPetStorage(userId, 'pet_inventory');
+            const savedLastSavedAt = readPetStorage(userId, 'pet_last_saved_at');
+            const savedSleeping = readPetStorage(userId, PET_SLEEPING_KEY);
+            const savedSleepingUpdatedAt = readPetStorage(userId, PET_SLEEPING_UPDATED_AT_KEY);
 
             let loadedStats: PetStats | null = savedStats ? JSON.parse(savedStats) : null;
 
@@ -318,12 +383,12 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                 _setPetName(adoptedPet);
                 setHasAdoptedPet(true);
             }
-            const savedBall = localStorage.getItem('pet_active_ball');
+            const savedBall = readPetStorage(userId, 'pet_active_ball');
             if (savedBall) setActiveBallId(savedBall);
-            const savedBed = localStorage.getItem(ACTIVE_BED_KEY);
+            const savedBed = readPetStorage(userId, ACTIVE_BED_KEY);
             const hasMigratedDefaultBed = localStorage.getItem(ACTIVE_BED_DEFAULT_MIGRATION_KEY) === 'true';
             if (savedBed === 'bed_grey' && !hasMigratedDefaultBed) {
-                localStorage.removeItem(ACTIVE_BED_KEY);
+                removePetStorage(userId, ACTIVE_BED_KEY);
                 localStorage.setItem(ACTIVE_BED_DEFAULT_MIGRATION_KEY, 'true');
             } else {
                 if (savedBed) setActiveBedId(savedBed);
@@ -343,7 +408,7 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                     if (!petData) {
                         const starterStats = createStarterStats();
                         const starterInventory = createStarterInventory();
-                        clearPetLocalStorage();
+                        clearPetLocalStorage(userId);
                         setStats(starterStats);
                         setInventory(starterInventory);
                         setActiveBallId('ball_red');
@@ -351,9 +416,9 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                         setIsSleeping(false);
                         _setPetName(DEFAULT_PET_ID);
                         setHasAdoptedPet(false);
-                        localStorage.setItem('pet_stats', JSON.stringify(starterStats));
-                        localStorage.setItem('pet_inventory', JSON.stringify(starterInventory));
-                        localStorage.setItem('pet_last_saved_at', new Date().toISOString());
+                        writePetStorage(userId, 'pet_stats', JSON.stringify(starterStats));
+                        writePetStorage(userId, 'pet_inventory', JSON.stringify(starterInventory));
+                        writePetStorage(userId, 'pet_last_saved_at', new Date().toISOString());
                     }
 
                     if (petData) {
@@ -391,8 +456,8 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                             const adoptedPet = normalizePetId(petData.identity.petName);
                             _setPetName(adoptedPet);
                             setHasAdoptedPet(true);
-                            localStorage.setItem('pet_name', adoptedPet);
-                            localStorage.setItem(PET_ADOPTION_CONFIRMED_KEY, 'true');
+                            writePetStorage(userId, 'pet_name', adoptedPet);
+                            writePetStorage(userId, PET_ADOPTION_CONFIRMED_KEY, 'true');
                             shouldLoadPetInventory = true;
                             setIsSleeping(shouldUseLocalSleep ? savedSleeping === 'true' : !!petData.identity.isSleeping);
                             if (petData.identity.activeBallId) setActiveBallId(petData.identity.activeBallId);
@@ -400,16 +465,16 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                         } else {
                             const starterStats = createStarterStats();
                             const starterInventory = createStarterInventory();
-                            clearPetLocalStorage();
+                            clearPetLocalStorage(userId);
                             setStats(starterStats);
                             setInventory(starterInventory);
                             setActiveBallId('ball_red');
                             setActiveBedId(null);
                             _setPetName(DEFAULT_PET_ID);
                             setHasAdoptedPet(false);
-                            localStorage.setItem('pet_stats', JSON.stringify(starterStats));
-                            localStorage.setItem('pet_inventory', JSON.stringify(starterInventory));
-                            localStorage.setItem('pet_last_saved_at', new Date().toISOString());
+                            writePetStorage(userId, 'pet_stats', JSON.stringify(starterStats));
+                            writePetStorage(userId, 'pet_inventory', JSON.stringify(starterInventory));
+                            writePetStorage(userId, 'pet_last_saved_at', new Date().toISOString());
                         }
                     }
 
@@ -426,13 +491,37 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                         });
                         setInventory(newInv);
                     }
+
+                    // Only reached if the ENTIRE authenticated hydration
+                    // sequence above resolved without throwing — i.e. only
+                    // after loadSnapshot (and, when applicable,
+                    // loadInventoryRows) genuinely confirmed either an
+                    // existing snapshot or its legitimate absence. A
+                    // rejected load must never be visually indistinguishable
+                    // from a confirmed empty/new-user state: leaving these
+                    // two flags at their initial `false` on that path keeps
+                    // `PetAdoptionModal` (`!isPetAdoptionReady || ...`)
+                    // suppressed instead of incorrectly showing the adopt
+                    // flow, and keeps the debounced-save effect below
+                    // (`if (!isHydrated.current) return;`) from persisting
+                    // not-yet-confirmed — possibly still-starter-default —
+                    // state back over the user's real backend data on the
+                    // next game-loop tick. The next full remount (e.g.
+                    // reopening Virtual Pet) retries hydration from scratch.
+                    setIsPetAdoptionReady(true);
+                    isHydrated.current = true;
                 } catch (err) {
                     console.error('Failed to load from repository', err);
                 }
+            } else {
+                // No authenticated user at all — this was always a fully
+                // local, backend-independent session (see
+                // `SharedPetProviderProps.userId`'s own doc comment), so
+                // whatever the synchronous localStorage read above already
+                // established is already the complete, confirmed truth.
+                setIsPetAdoptionReady(true);
+                isHydrated.current = true;
             }
-
-            setIsPetAdoptionReady(true);
-            isHydrated.current = true;
         };
 
         init();
@@ -498,8 +587,8 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
     useEffect(() => {
         if (!isHydrated.current) return;
 
-        localStorage.setItem(PET_SLEEPING_KEY, String(isSleeping));
-        localStorage.setItem(PET_SLEEPING_UPDATED_AT_KEY, new Date().toISOString());
+        writePetStorage(userId, PET_SLEEPING_KEY, String(isSleeping));
+        writePetStorage(userId, PET_SLEEPING_UPDATED_AT_KEY, new Date().toISOString());
         window.dispatchEvent(new CustomEvent('virtual-pet-sleep-change', { detail: isSleeping }));
     }, [isSleeping]);
 
@@ -508,8 +597,8 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
 
         const activePetId = normalizePetId(petName);
         if (hasAdoptedPet) {
-            localStorage.setItem('pet_name', activePetId);
-            localStorage.setItem(PET_ADOPTION_CONFIRMED_KEY, 'true');
+            writePetStorage(userId, 'pet_name', activePetId);
+            writePetStorage(userId, PET_ADOPTION_CONFIRMED_KEY, 'true');
         }
         window.dispatchEvent(new CustomEvent('virtual-pet-selection-change', { detail: activePetId }));
     }, [petName, hasAdoptedPet]);
@@ -590,7 +679,7 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                 await repository.saveInventory(userId, []);
             }
 
-            clearPetLocalStorage();
+            clearPetLocalStorage(userId);
             setStats(starterStats);
             setInventory(starterInventory);
             setActiveBallId('ball_red');
@@ -598,14 +687,14 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
             setIsSleeping(false);
             _setPetName(adoptedPet);
             setHasAdoptedPet(true);
-            localStorage.setItem('pet_name', adoptedPet);
-            localStorage.setItem(PET_ADOPTION_CONFIRMED_KEY, 'true');
-            localStorage.setItem('pet_stats', JSON.stringify(starterStats));
-            localStorage.setItem('pet_inventory', JSON.stringify(starterInventory));
-            localStorage.setItem('pet_last_saved_at', savedAt);
-            localStorage.setItem('pet_active_ball', 'ball_red');
-            localStorage.setItem(PET_SLEEPING_KEY, 'false');
-            localStorage.setItem(PET_SLEEPING_UPDATED_AT_KEY, savedAt);
+            writePetStorage(userId, 'pet_name', adoptedPet);
+            writePetStorage(userId, PET_ADOPTION_CONFIRMED_KEY, 'true');
+            writePetStorage(userId, 'pet_stats', JSON.stringify(starterStats));
+            writePetStorage(userId, 'pet_inventory', JSON.stringify(starterInventory));
+            writePetStorage(userId, 'pet_last_saved_at', savedAt);
+            writePetStorage(userId, 'pet_active_ball', 'ball_red');
+            writePetStorage(userId, PET_SLEEPING_KEY, 'false');
+            writePetStorage(userId, PET_SLEEPING_UPDATED_AT_KEY, savedAt);
             window.dispatchEvent(new CustomEvent('virtual-pet-selection-change', { detail: adoptedPet }));
             return true;
         } catch (err) {
@@ -640,6 +729,7 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
 
     return (
         <GameStateContext.Provider value={{
+            userId,
             stats, setStats,
             petName, setPetName,
             hasAdoptedPet,
