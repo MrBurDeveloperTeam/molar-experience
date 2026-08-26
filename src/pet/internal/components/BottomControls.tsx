@@ -128,7 +128,7 @@ const BottomControls: React.FC<BottomControlsProps> = ({
     };
 
     return (
-        <div className="absolute left-2 top-[clamp(4.5rem,50%,100%)] z-40 flex -translate-y-1/2 flex-col items-center sm:left-4 sm:top-[clamp(6.5rem,50%,100%)]">
+        <div className="absolute left-2 top-[4.5rem] bottom-2 z-40 flex flex-col items-center justify-center overflow-y-auto sm:left-4 sm:top-[6.5rem] sm:bottom-4">
             <button
               onClick={onOpenShop}
               className="group relative flex h-12 w-12 cursor-pointer flex-col items-center justify-center rounded-lg bg-gradient-to-br from-orange-300 to-orange-500 text-white shadow-lg shadow-orange-900/20 transition-all duration-300 hover:scale-105 active:scale-95 sm:h-[70px] sm:w-[70px] sm:rounded-xl"
