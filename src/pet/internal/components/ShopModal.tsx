@@ -155,8 +155,17 @@ const ShopModal: React.FC<ShopModalProps> = ({
 
   const selectedStyle = CATEGORY_STYLES[selectedCategory || 'Default'] || CATEGORY_STYLES.Default;
 
+  // PATCH 0.6.8: raised from z-50 to z-[80] so this overlay stacks above
+  // VirtualPetContent's room Back button (z-[70]) — normal room content
+  // elsewhere in PetRoom already reaches z-50, so lowering the Back button
+  // instead risked it dropping below legitimate room content; raising only
+  // this overlay is the minimal, non-disruptive fix. Back button stays
+  // mounted/rendered the whole time (stacking-only fix, never a
+  // visibility/display/pointer-events hack) — it is simply covered by this
+  // now-higher overlay while Shop is open, and this overlay's own backdrop
+  // naturally intercepts all pointer interaction in front of it.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-[30px] border-4 border-orange-100 bg-white shadow-2xl">
         <div className="relative overflow-hidden bg-gradient-to-r from-orange-400 to-amber-400 px-5 py-4 text-white">
           <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/15" />
