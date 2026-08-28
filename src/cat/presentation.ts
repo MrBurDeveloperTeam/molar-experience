@@ -56,4 +56,18 @@ export interface SharedCatMascotProps {
    *  discover/copy this package's internally-bundled asset references
    *  (e.g. Next.js/Turbopack); Vite-based hosts do not need this. */
   spriteSheetUrls?: Partial<Record<SharedCatPetId, string>>;
+  /**
+   * Fires exactly once per mount, the instant the Cat's initial entry walk
+   * (screen-edge -> resting position) reaches its final position — not at
+   * walk start, not on every idle/click-to-move walk afterward, and never
+   * repeatedly. Optional: omitting it changes nothing about the Cat's own
+   * rendering/animation, since this package owns entry-walk position
+   * unconditionally regardless of whether a host listens.
+   *
+   * Exists so a host that gates its OWN dialogue-activation timing on the
+   * Cat's arrival (so a dialogue bubble never visually opens mid-walk) has
+   * a true completion signal to react to, instead of duplicating this
+   * package's internal walk duration as a second, host-side timer.
+   */
+  onEntryWalkComplete?: () => void;
 }

@@ -63,6 +63,7 @@ export function SharedCatMascot({
   meowMessage = null,
   onCatClick,
   spriteSheetUrls,
+  onEntryWalkComplete,
 }: SharedCatMascotProps) {
   const [catPos, setCatPos] = useState({ x: -10, y: 85 });
   const [isWalking, setIsWalking] = useState(false);
@@ -84,20 +85,62 @@ export function SharedCatMascot({
     const destY = 80 + Math.random() * 10;
     const duration = CAT_ENTRY_WALK_DURATION_MS / 1000;
 
-    lastMoveStartPos.current = { x: -10, y: 85 };
-    lastMoveTarget.current = { x: destX, y: destY };
-    lastMoveStartTime.current = Date.now();
-    lastMoveDuration.current = duration;
+    let cancelled = false;
+    let rafId1: number | null = null;
+    let rafId2: number | null = null;
 
-    setFacingLeft(false);
-    setWalkDuration(duration);
-    setCatPos({ x: destX, y: destY });
-    setIsWalking(true);
+    // Paint-boundary guard: `catPos`'s initial `useState({ x: -10, y: 85 })`
+    // value IS the intended entry start position (already distinct from
+    // `destX`/`destY` below — this was never a delta-zero bug). The actual
+    // defect was that nothing forced the browser to ever paint that start
+    // position before this same mount-time effect immediately overwrote it
+    // with the destination: a bare no-deps effect's first setState can land
+    // in the very same commit/paint the browser was about to produce for
+    // the initial render, in which case the CSS `transition` on `left`/
+    // `top` never has an actual "from" frame to animate away from — the Cat
+    // silently snaps to its final position while `isWalking`'s sprite
+    // animation (a separate, self-contained CSS keyframe loop unaffected by
+    // this) keeps playing regardless, exactly matching the "plays walk
+    // sprite but doesn't move" symptom. A double rAF is the standard,
+    // deterministic way to guarantee the browser has committed and painted
+    // a frame with the current (start) style before the destination style
+    // is applied — not an arbitrary delay, and not tied to any particular
+    // host's mount/visibility timing. Deferring only this destination-
+    // setting/timer-arming step (not the dblclick listener/getInterpolatedPos
+    // below, which must be live immediately) also means the completion
+    // timer below still starts exactly when the real transition starts.
+    rafId1 = requestAnimationFrame(() => {
+      rafId2 = requestAnimationFrame(() => {
+        if (cancelled) return;
 
-    if (walkTimeoutRef.current) clearTimeout(walkTimeoutRef.current);
-    walkTimeoutRef.current = setTimeout(() => {
-      setIsWalking(false);
-    }, duration * 1000);
+        lastMoveStartPos.current = { x: -10, y: 85 };
+        lastMoveTarget.current = { x: destX, y: destY };
+        lastMoveStartTime.current = Date.now();
+        lastMoveDuration.current = duration;
+
+        setFacingLeft(false);
+        setWalkDuration(duration);
+        setCatPos({ x: destX, y: destY });
+        setIsWalking(true);
+
+        if (walkTimeoutRef.current) clearTimeout(walkTimeoutRef.current);
+        walkTimeoutRef.current = setTimeout(() => {
+          setIsWalking(false);
+          // True entry-walk completion point: this timeout is the same
+          // deterministic signal Shared itself already uses to flip
+          // `isWalking` false, co-timed with the CSS `transition` duration
+          // driving `catPos` above (now that the transition actually
+          // starts here, right after the paint-boundary rAFs) — not a
+          // second/approximate timer. Scoped to this initial-entry effect
+          // only (deps `[]`, runs once per mount, its own cleanup below
+          // cancels this exact timeout on unmount/StrictMode remount) so it
+          // can never fire from a later click-to-move walk, which reuses
+          // this same ref/setIsWalking(false) pattern below but is a
+          // structurally separate setTimeout call site.
+          onEntryWalkComplete?.();
+        }, duration * 1000);
+      });
+    });
 
     const getInterpolatedPos = () => {
       const elapsed = (Date.now() - lastMoveStartTime.current) / 1000;
@@ -144,6 +187,9 @@ export function SharedCatMascot({
 
     document.addEventListener('dblclick', handleGlobalClick);
     return () => {
+      cancelled = true;
+      if (rafId1 !== null) cancelAnimationFrame(rafId1);
+      if (rafId2 !== null) cancelAnimationFrame(rafId2);
       document.removeEventListener('dblclick', handleGlobalClick);
       if (walkTimeoutRef.current) clearTimeout(walkTimeoutRef.current);
     };
