@@ -160,22 +160,49 @@ export function useSharedCatDialogueRuntime<
   // adapter's explicit three-way state (never treats a bare `null`/
   // `not_ready` as proof of readiness) and only ever decides once per
   // activation, regardless of resolution speed.
+  //
+  // Two distinct "no personalized candidate yet" signals, deliberately NOT
+  // collapsed into one:
+  //   - `personalized` itself absent (omitted/undefined/null) means the
+  //     host has no personalized/proactive reminder concept at all (see
+  //     DialogueRuntimeInput's own doc comment on `personalized`) — a
+  //     permanent fact for this host for the whole mount, so it has always
+  //     been correct to fall straight through to Welcome Back here.
+  //   - `personalized` PRESENT but `.state` not yet a valid
+  //     `PersonalizedDialogueState` (i.e. out-of-contract `null`/
+  //     `undefined`, which `state`'s type never actually allows, but a
+  //     plain-JS host can still pass at runtime) is instead the transient
+  //     window before that host's own reactive publisher has rendered even
+  //     once — e.g. a React Context whose provider defaults to `null`
+  //     until a sibling component's `useEffect` first calls `publish(...)`.
+  //     Effects never run before the very first commit, so a host using
+  //     that pattern is GUARANTEED to render this hook with `state: null`
+  //     on every cold mount, not merely as an edge case. Treating that as
+  //     terminal here silently and permanently latched Welcome Back before
+  //     the host's real `not_ready` → `ready` transition — including a
+  //     real P0 candidate — ever got a chance to be observed (proven
+  //     against To-Do Manager's Overdue-High-Task Cat reminder). Treat it
+  //     exactly like `not_ready` instead: wait, do not latch, let this
+  //     effect naturally re-run once the host's own state settles into a
+  //     real contract value.
   useEffect(() => {
     if (disabled || !userId) return;
     if (currentDialogType.current) return;
     if (arbitrationStartedRef.current) return;
     if (!isIntroCompleted(userId)) return;
 
-    const personalizedState = personalized?.state ?? null;
-
-    if (personalizedState === null) {
+    if (personalized == null) {
       arbitrationStartedRef.current = true;
       welcomeBackPhaseEnteredRef.current = true;
       return;
     }
 
-    if (personalizedState.status === 'not_ready') {
-      // Genuinely unresolved — do nothing yet, may be called again.
+    const personalizedState = personalized.state;
+
+    if (personalizedState == null || personalizedState.status === 'not_ready') {
+      // Genuinely unresolved, or the host's adapter is present but hasn't
+      // rendered a valid state yet (see comment above) — do nothing yet,
+      // may be called again.
       return;
     }
 
