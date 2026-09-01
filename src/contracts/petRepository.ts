@@ -32,6 +32,19 @@ export interface PetRepository {
    *  login) — the runtime seeds fresh starter stats in that case, exactly
    *  as Content Studio's `!petData && !petErr` branch does today. */
   loadSnapshot(userId: string): Promise<PetSaveSnapshot | null>;
+  /** Upserts every field of `snapshot` EXCEPT `snapshot.stats.coins`,
+   *  which a compliant implementation MUST ignore for an already-existing
+   *  row (a fresh INSERT for a brand-new row may still seed coins from
+   *  it — see `adoptPet`, the only caller that relies on this). Coins are
+   *  a shared, cross-app-contested resource the same way `pet_inventory`
+   *  rows are; this method is called on a 2s debounce by every stat
+   *  change (including a routine hunger-decay tick, not just coin
+   *  changes), so writing coins here unconditionally would let one tab's
+   *  stale locally-cached balance silently clobber a concurrently-updated
+   *  real balance from another app/tab. Coins are instead managed
+   *  exclusively by `mutateCoins`/`purchasePetItem`'s atomic deltas
+   *  (added in 0.8.0), each persisted immediately, never through this
+   *  debounced path. */
   saveSnapshot(snapshot: PetSaveSnapshot): Promise<void>;
   /** Raw per-item rows — the runtime itself applies the exact same
    *  soap/soap2-exclusion and toy-quantity-clamped-to-1 mapping Content
@@ -73,6 +86,37 @@ export interface PetRepository {
    *  repository that hasn't implemented this yet simply omits it — the
    *  runtime detects its absence and falls back to `saveInventory`. */
   mutateInventoryItem?(userId: string, itemId: string, delta: number): Promise<number>;
+  /** Atomically adds `delta` (positive to earn, negative to spend) to the
+   *  current DB `coins` balance for the CURRENT authenticated user,
+   *  returning the resulting balance. Implementations MUST: derive the
+   *  owning user from the caller's own session, never trust `userId` as
+   *  sufficient authorization; reject (throw) a delta that would take
+   *  the balance below 0 rather than silently clamping it, matching the
+   *  runtime's own pre-spend affordability check; make the read-modify-
+   *  write atomic so concurrent calls never lose an update, the same way
+   *  `mutateInventoryItem` does for items.
+   *
+   *  OPTIONAL for backward compatibility: added in 0.8.0. A host
+   *  repository that hasn't implemented this yet simply omits it — the
+   *  runtime falls back to an immediate (non-debounced) `saveSnapshot`
+   *  call instead. */
+  mutateCoins?(userId: string, delta: number): Promise<number>;
+  /** Atomically executes one shop purchase: validates the CURRENT
+   *  authenticated user has at least `price` coins, deducts `price`, and
+   *  increments `itemId`'s quantity by 1 — all as a single server-side
+   *  transaction, so a purchase can never leave coins deducted without
+   *  the item (or vice versa), and two concurrent purchases can never
+   *  both succeed against the same now-insufficient balance. Throws
+   *  (rather than partially applying) when the balance is insufficient.
+   *
+   *  OPTIONAL for backward compatibility: added in 0.8.0. A host
+   *  repository that hasn't implemented this yet simply omits it — the
+   *  runtime falls back to `mutateInventoryItem` + `mutateCoins` as two
+   *  separate atomic single-resource calls (narrower than one
+   *  transaction, but still strictly safer than the pre-0.7.0 full-list-
+   *  replace path), and falls back again to `saveInventory` +
+   *  `saveSnapshot` if neither of those exists either. */
+  purchasePetItem?(userId: string, itemId: string, price: number): Promise<{ coins: number; quantity: number }>;
   /** One flat, mixed-category shop catalog (food + beds + soap, ordered
    *  by unlock level ascending) — empty/rejected means "use the package's
    *  own static fallback catalog", matching Content Studio's own

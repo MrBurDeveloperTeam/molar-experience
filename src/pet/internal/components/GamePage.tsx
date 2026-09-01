@@ -85,7 +85,7 @@ interface GamePageProps {
 
 export const GamePage: React.FC<GamePageProps> = ({ gameId, onClose }) => {
     const [isLoading, setIsLoading] = useState(true);
-    const { stats, setStats } = useGameState();
+    const { stats, setStats, addCoins } = useGameState();
     const [sessionCoins, setSessionCoins] = useState(0);
 
     // Sync score from games
@@ -103,9 +103,13 @@ export const GamePage: React.FC<GamePageProps> = ({ gameId, onClose }) => {
                 const reward = Math.floor(totalScore / 100);
 
                 if (reward > 0) {
+                    // Coins are persisted as their own atomic delta (see
+                    // SharedPetRuntime's addCoins/persistCoinsDelta) --
+                    // never routed back through a full-stats debounced
+                    // save, which no longer writes coins at all.
+                    addCoins(reward);
                     setStats(prev => ({
                         ...prev,
-                        coins: (prev.coins || 0) + reward,
                         happiness: Math.min(100, (prev.happiness || 0) + 15)
                     }));
                 }
@@ -115,7 +119,7 @@ export const GamePage: React.FC<GamePageProps> = ({ gameId, onClose }) => {
 
         window.addEventListener('message', handleMessage);
         return () => window.removeEventListener('message', handleMessage);
-    }, [setStats]);
+    }, [setStats, addCoins]);
 
     // Prevent scroll when game is open
     useEffect(() => {

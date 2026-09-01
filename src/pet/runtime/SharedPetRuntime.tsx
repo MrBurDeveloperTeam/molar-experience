@@ -137,6 +137,12 @@ interface GameStateContextType {
     buyItem: (itemId: string, price: number) => boolean;
     consumeItem: (itemId: string) => void;
     addXP: (amount: number) => void;
+    /** Coin-only earn (positive) or spend (negative) not tied to a shop
+     *  purchase — e.g. a mini-game's coin reward. Persists atomically and
+     *  immediately (not via the debounced snapshot sync); prefer
+     *  `buyItem` for anything that also grants/consumes an inventory
+     *  item, since that commits coins + the item as one transaction. */
+    addCoins: (delta: number) => void;
     activeBallId: string;
     setActiveBallId: (id: string) => void;
     activeBedId: string | null;
@@ -275,6 +281,18 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                     },
                     updatedAt: new Date().toISOString(),
                 };
+                // `snapshot.stats.coins` is carried along here because
+                // `PetSaveSnapshot`'s shape requires it, but per
+                // `saveSnapshot`'s own contract doc a compliant
+                // implementation must ignore it for an already-existing
+                // row -- coins are managed exclusively by
+                // `mutateCoins`/`purchasePetItem`'s atomic deltas
+                // (persisted immediately, not via this debounced call).
+                // Writing it here unconditionally would let this tab's
+                // own possibly-stale locally-cached balance (this effect
+                // also fires on every hunger-decay tick, not just coin
+                // changes) silently clobber a concurrently-updated real
+                // balance from another app/tab.
                 await repository.saveSnapshot(snapshot);
                 // Inventory is deliberately NOT synced here. It used to be
                 // sent as a full delete-all-then-insert (later upsert+
@@ -318,6 +336,71 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
             }
         } catch (e) {
             console.error('Failed to persist inventory item mutation', e);
+        }
+    };
+
+    // Persists a coin-only earn/spend atomically and immediately (not via
+    // the debounced snapshot sync) -- coins are a shared, contested
+    // resource across up to 7 apps/tabs the same way pet_inventory rows
+    // are, so they get the same "narrow atomic RPC now, debounced
+    // full-write never" treatment as items. Prefers `mutateCoins`; falls
+    // back to an immediate full `saveSnapshot` for a host repository that
+    // hasn't implemented it yet.
+    const persistCoinsDelta = async (delta: number, fullStatsSnapshot: PetStats) => {
+        if (!userId) return;
+        try {
+            if (repository.mutateCoins) {
+                await repository.mutateCoins(userId, delta);
+            } else {
+                const payload = latestPersistPayloadRef.current;
+                const snapshot: PetSaveSnapshot = {
+                    globalUserId: userId,
+                    stats: fullStatsSnapshot,
+                    identity: {
+                        petName: payload.hasAdoptedPet ? payload.petName : '',
+                        selectedPetId: payload.petName,
+                        isSleeping: payload.isSleeping,
+                        activeBallId: payload.activeBallId,
+                        activeBedId: payload.activeBedId,
+                    },
+                    updatedAt: new Date().toISOString(),
+                };
+                await repository.saveSnapshot(snapshot);
+            }
+        } catch (e) {
+            console.error('Failed to persist coin mutation', e);
+        }
+    };
+
+    // Persists ONE shop purchase -- coin deduction + item grant -- as a
+    // single business action. Prefers the one-transaction
+    // `purchasePetItem` (coins and the item commit or fail together, and
+    // two concurrent purchases can never overspend the same balance);
+    // falls back to two separate atomic single-resource calls
+    // (`mutateInventoryItem` + `mutateCoins`) for a host repository that
+    // has upgraded to 0.7.0's item-level mutation but not yet to 0.8.0's
+    // purchase RPC; falls back again to the oldest full-list-replace path
+    // for a host that hasn't upgraded at all.
+    const persistPurchase = async (itemId: string, price: number, fullInventorySnapshot: Record<string, number>, fullStatsSnapshot: PetStats) => {
+        if (!userId) return;
+        try {
+            if (repository.purchasePetItem) {
+                await repository.purchasePetItem(userId, itemId, price);
+            } else if (repository.mutateInventoryItem && repository.mutateCoins) {
+                await repository.mutateInventoryItem(userId, itemId, 1);
+                await repository.mutateCoins(userId, -price);
+            } else {
+                const invRows = Object.entries(fullInventorySnapshot)
+                    .filter(([, qty]) => qty > 0)
+                    .map(([id, qty]) => ({
+                        itemId: id,
+                        quantity: TOY_ITEM_IDS.includes(id) ? 1 : qty,
+                    }));
+                await repository.saveInventory(userId, invRows);
+                await persistCoinsDelta(-price, fullStatsSnapshot);
+            }
+        } catch (e) {
+            console.error('Failed to persist purchase', e);
         }
     };
 
@@ -657,6 +740,8 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
     }, [isSleeping, activeBedId, foodItems]);
 
     const addXP = (amount: number) => {
+        let coinsDelta = 0;
+        let nextStats: PetStats = stats;
         setStats(prev => {
             let newXP = prev.xp + amount;
             let newLevel = prev.level;
@@ -665,7 +750,8 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                 newXP -= XP_TO_LEVEL_UP;
                 newLevel += 1;
                 newCoins = (prev.coins || 0) + 50;
-                return {
+                coinsDelta = 50;
+                nextStats = {
                     ...prev,
                     level: newLevel,
                     xp: newXP,
@@ -673,9 +759,29 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                     energy: 100,
                     coins: newCoins
                 };
+                return nextStats;
             }
-            return { ...prev, xp: newXP, level: newLevel };
+            nextStats = { ...prev, xp: newXP, level: newLevel };
+            return nextStats;
         });
+        // The level-up coin reward is persisted immediately as its own
+        // atomic delta -- it must never wait for (or ride along with) the
+        // debounced snapshot save, which no longer writes coins at all
+        // (see persistCoinsDelta/save_pet_snapshot).
+        if (coinsDelta !== 0) {
+            void persistCoinsDelta(coinsDelta, nextStats);
+        }
+    };
+
+    // Coin-only earn/spend not tied to a shop purchase (e.g. a mini-game
+    // reward) -- see `GameStateContextType.addCoins`'s own doc comment.
+    const addCoins = (delta: number) => {
+        let nextStats: PetStats = stats;
+        setStats(prev => {
+            nextStats = { ...prev, coins: Math.max(0, (prev.coins || 0) + delta) };
+            return nextStats;
+        });
+        void persistCoinsDelta(delta, nextStats);
     };
 
     const adoptPet = async (name: string) => {
@@ -730,13 +836,21 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
 
     const buyItem = (itemId: string, price: number) => {
         if (stats.coins >= price) {
-            setStats(prev => ({ ...prev, coins: prev.coins - price }));
+            let nextStats: PetStats = stats;
+            setStats(prev => {
+                nextStats = { ...prev, coins: prev.coins - price };
+                return nextStats;
+            });
             let nextInventory: Record<string, number> = {};
             setInventory(prev => {
                 nextInventory = { ...prev, [itemId]: (prev[itemId] || 0) + 1 };
                 return nextInventory;
             });
-            void persistInventoryDelta(itemId, 1, nextInventory);
+            // One business action (coins + item) persisted as one call --
+            // see persistPurchase's own doc comment for why this replaced
+            // the separate persistInventoryDelta-only call this used
+            // pre-0.8.0.
+            void persistPurchase(itemId, price, nextInventory, nextStats);
             return true;
         }
         return false;
@@ -778,6 +892,7 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
             buyItem,
             consumeItem,
             addXP,
+            addCoins,
             activeBallId,
             setActiveBallId,
             activeBedId,
