@@ -41,8 +41,38 @@ export interface PetRepository {
   /** Full-sync semantics: delete every existing row for `userId`, then
    *  bulk-insert exactly the given rows (an empty array means "delete
    *  all") — matches Content Studio's `pet_inventory` delete-then-insert
-   *  sync exactly. Never a partial/diffed update. */
+   *  sync exactly. Never a partial/diffed update.
+   *
+   *  Because the same `pet_inventory` rows are shared across up to 7
+   *  host apps/tabs, sending this as the routine persistence path for
+   *  every ordinary buy/consume action lets a stale in-memory snapshot
+   *  from one tab silently prune an item another tab concurrently added
+   *  — the runtime no longer does that (see `mutateInventoryItem`
+   *  below). This method now exists for genuine full-replace operations
+   *  only (e.g. resetting to `[]` on a fresh pet adoption) and as the
+   *  runtime's own backward-compatible fallback when a host repository
+   *  hasn't implemented `mutateInventoryItem` yet. */
   saveInventory(userId: string, items: PetInventoryItem[]): Promise<void>;
+  /** Atomically adds `delta` (positive to gain, negative to spend/use) to
+   *  the current DB quantity of ONE item, without reading or replacing
+   *  any other item's row — the narrow, cross-app-safe persistence path
+   *  the runtime now uses for `buyItem`/`consumeItem` instead of
+   *  `saveInventory`'s full-list replace. Returns the resulting
+   *  quantity (0 once the item is fully consumed/removed).
+   *
+   *  Implementations MUST: derive the owning user from the caller's own
+   *  authenticated session, never trust `userId` as sufficient
+   *  authorization by itself; clamp the resulting quantity at 0 (never
+   *  allow negative inventory); leave every other item's row completely
+   *  untouched; and make the read-modify-write atomic (e.g. a single
+   *  `UPDATE ... SET quantity = quantity + delta` under the database's
+   *  own row-level locking) so concurrent calls for the same item from
+   *  different apps/tabs never lose an update.
+   *
+   *  OPTIONAL for backward compatibility: added in 0.7.0. A host
+   *  repository that hasn't implemented this yet simply omits it — the
+   *  runtime detects its absence and falls back to `saveInventory`. */
+  mutateInventoryItem?(userId: string, itemId: string, delta: number): Promise<number>;
   /** One flat, mixed-category shop catalog (food + beds + soap, ordered
    *  by unlock level ascending) — empty/rejected means "use the package's
    *  own static fallback catalog", matching Content Studio's own

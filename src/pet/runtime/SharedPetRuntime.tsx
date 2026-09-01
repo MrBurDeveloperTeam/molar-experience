@@ -276,23 +276,48 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                     updatedAt: new Date().toISOString(),
                 };
                 await repository.saveSnapshot(snapshot);
-
-                // Fast full sync for inventory: repository owns the
-                // delete-all-then-insert semantics (matches the
-                // original's `.delete().eq('user_id', userId)` then
-                // bulk insert exactly).
-                const combinedInventory: Record<string, number> = inventory;
-                const invRows = Object.entries(combinedInventory)
-                    .filter(([, qty]) => qty > 0)
-                    .map(([itemId, qty]) => ({
-                        itemId,
-                        quantity: TOY_ITEM_IDS.includes(itemId) ? 1 : qty,
-                    }));
-
-                await repository.saveInventory(userId, invRows);
+                // Inventory is deliberately NOT synced here. It used to be
+                // sent as a full delete-all-then-insert (later upsert+
+                // prune) snapshot on every debounce tick, which meant any
+                // pending save from a stale tab/app could silently
+                // overwrite an item another tab/app had concurrently
+                // added or changed — the same shared `pet_inventory` rows
+                // are written by up to 7 apps. Item-level mutations
+                // (`buyItem`/`consumeItem`) now persist themselves
+                // immediately via `persistInventoryDelta` below, which
+                // touches only the single row it actually changed. The
+                // only remaining full-replace path is `adoptPet`'s
+                // deliberate reset-to-empty on a brand-new pet.
             } catch (e) {
                 console.error('Failed to sync to repository', e);
             }
+        }
+    };
+
+    // Persists ONE item's quantity change atomically, without touching any
+    // other item's row — the fix for the stale-full-snapshot overwrite risk
+    // described above. Prefers the narrow `mutateInventoryItem` repository
+    // method (added alongside this fix); falls back to an immediate
+    // (non-debounced) full-list `saveInventory` call for a host repository
+    // that hasn't implemented it yet, so persistence never silently stops
+    // working for an older adapter — it just loses this release's
+    // narrower cross-app-safe guarantee until it upgrades.
+    const persistInventoryDelta = async (itemId: string, delta: number, fullInventorySnapshot: Record<string, number>) => {
+        if (!userId) return;
+        try {
+            if (repository.mutateInventoryItem) {
+                await repository.mutateInventoryItem(userId, itemId, delta);
+            } else {
+                const invRows = Object.entries(fullInventorySnapshot)
+                    .filter(([, qty]) => qty > 0)
+                    .map(([id, qty]) => ({
+                        itemId: id,
+                        quantity: TOY_ITEM_IDS.includes(id) ? 1 : qty,
+                    }));
+                await repository.saveInventory(userId, invRows);
+            }
+        } catch (e) {
+            console.error('Failed to persist inventory item mutation', e);
         }
     };
 
@@ -706,25 +731,35 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
     const buyItem = (itemId: string, price: number) => {
         if (stats.coins >= price) {
             setStats(prev => ({ ...prev, coins: prev.coins - price }));
-            setInventory(prev => ({
-                ...prev,
-                [itemId]: (prev[itemId] || 0) + 1
-            }));
+            let nextInventory: Record<string, number> = {};
+            setInventory(prev => {
+                nextInventory = { ...prev, [itemId]: (prev[itemId] || 0) + 1 };
+                return nextInventory;
+            });
+            void persistInventoryDelta(itemId, 1, nextInventory);
             return true;
         }
         return false;
     };
 
     const consumeItem = (itemId: string) => {
+        let nextInventory: Record<string, number> = {};
+        let hadItem = false;
         setInventory(prev => {
             const current = prev[itemId] || 0;
+            hadItem = current > 0;
             if (current <= 1) {
                 const newState = { ...prev };
                 delete newState[itemId];
-                return newState;
+                nextInventory = newState;
+            } else {
+                nextInventory = { ...prev, [itemId]: current - 1 };
             }
-            return { ...prev, [itemId]: current - 1 };
+            return nextInventory;
         });
+        if (hadItem) {
+            void persistInventoryDelta(itemId, -1, nextInventory);
+        }
     };
 
     return (
