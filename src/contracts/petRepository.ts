@@ -33,18 +33,20 @@ export interface PetRepository {
    *  as Content Studio's `!petData && !petErr` branch does today. */
   loadSnapshot(userId: string): Promise<PetSaveSnapshot | null>;
   /** Upserts every field of `snapshot` EXCEPT `snapshot.stats.coins`,
-   *  which a compliant implementation MUST ignore for an already-existing
-   *  row (a fresh INSERT for a brand-new row may still seed coins from
-   *  it — see `adoptPet`, the only caller that relies on this). Coins are
-   *  a shared, cross-app-contested resource the same way `pet_inventory`
-   *  rows are; this method is called on a 2s debounce by every stat
-   *  change (including a routine hunger-decay tick, not just coin
-   *  changes), so writing coins here unconditionally would let one tab's
-   *  stale locally-cached balance silently clobber a concurrently-updated
-   *  real balance from another app/tab. Coins are instead managed
-   *  exclusively by `mutateCoins`/`purchasePetItem`'s atomic deltas
-   *  (added in 0.8.0), each persisted immediately, never through this
-   *  debounced path. */
+   *  `snapshot.stats.xp`, and `snapshot.stats.level`, which a compliant
+   *  implementation MUST ignore for an already-existing row (a fresh
+   *  INSERT for a brand-new row may still seed all three from it — see
+   *  `adoptPet`, the only caller that relies on this). Coins and xp/level
+   *  are shared, cross-app-contested cumulative resources the same way
+   *  `pet_inventory` rows are; this method is called on a 2s debounce by
+   *  every stat change (including a routine hunger-decay tick, not just
+   *  coin/XP changes), so writing them here unconditionally would let one
+   *  tab's stale locally-cached values silently clobber a concurrently-
+   *  updated real balance/progression from another app/tab. Coins are
+   *  instead managed exclusively by `mutateCoins`/`purchasePetItem`'s
+   *  atomic deltas (added in 0.8.0), and xp/level by `addXP`'s atomic
+   *  delta+threshold transaction (added in 0.9.0) — each persisted
+   *  immediately, never through this debounced path. */
   saveSnapshot(snapshot: PetSaveSnapshot): Promise<void>;
   /** Raw per-item rows — the runtime itself applies the exact same
    *  soap/soap2-exclusion and toy-quantity-clamped-to-1 mapping Content
@@ -117,6 +119,29 @@ export interface PetRepository {
    *  replace path), and falls back again to `saveInventory` +
    *  `saveSnapshot` if neither of those exists either. */
   purchasePetItem?(userId: string, itemId: string, price: number): Promise<{ coins: number; quantity: number }>;
+  /** Atomically applies `delta` XP to the CURRENT authenticated user's
+   *  pet, determining resulting xp, resulting level, how many levels
+   *  were gained, and the coupled level-up coin reward (if any) all from
+   *  the CURRENT server-side row under a single lock/transaction — never
+   *  from a client-supplied final xp/level, which could be computed from
+   *  a stale local snapshot the way the runtime's own optimistic local
+   *  update can be. Implementations MUST replicate the exact same
+   *  threshold/reward rule the shared runtime's own client-side `addXP`
+   *  uses: 100 XP per level, +50 coins per level gained, ONE threshold
+   *  check per call (not a loop — a single large XP gain crosses at most
+   *  one level here too, leaving any leftover XP above threshold to be
+   *  resolved by a later call, exactly matching current product
+   *  behavior) — so client and server can never disagree about
+   *  progression.
+   *
+   *  OPTIONAL for backward compatibility: added in 0.9.0. A host
+   *  repository that hasn't implemented this yet simply omits it — the
+   *  runtime falls back to persisting its own optimistic local xp/level/
+   *  coins via `mutateCoins`/`saveSnapshot` (best-effort only: every host
+   *  that has already upgraded to this package's `save_pet_snapshot`-
+   *  backed `saveSnapshot` treats xp/level as a no-op there regardless,
+   *  same as coins). */
+  addXP?(userId: string, delta: number): Promise<{ xp: number; level: number; levelsGained: number; coins: number }>;
   /** One flat, mixed-category shop catalog (food + beds + soap, ordered
    *  by unlock level ascending) — empty/rejected means "use the package's
    *  own static fallback catalog", matching Content Studio's own

@@ -281,18 +281,20 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
                     },
                     updatedAt: new Date().toISOString(),
                 };
-                // `snapshot.stats.coins` is carried along here because
-                // `PetSaveSnapshot`'s shape requires it, but per
-                // `saveSnapshot`'s own contract doc a compliant
-                // implementation must ignore it for an already-existing
-                // row -- coins are managed exclusively by
-                // `mutateCoins`/`purchasePetItem`'s atomic deltas
-                // (persisted immediately, not via this debounced call).
-                // Writing it here unconditionally would let this tab's
-                // own possibly-stale locally-cached balance (this effect
-                // also fires on every hunger-decay tick, not just coin
-                // changes) silently clobber a concurrently-updated real
-                // balance from another app/tab.
+                // `snapshot.stats.coins`/`.xp`/`.level` are carried along
+                // here because `PetSaveSnapshot`'s shape requires them,
+                // but per `saveSnapshot`'s own contract doc a compliant
+                // implementation must ignore all three for an already-
+                // existing row -- coins are managed exclusively by
+                // `mutateCoins`/`purchasePetItem`'s atomic deltas, and
+                // xp/level by `addXP`'s atomic delta+threshold
+                // transaction (each persisted immediately, never via this
+                // debounced call). Writing them here unconditionally
+                // would let this tab's own possibly-stale locally-cached
+                // values (this effect also fires on every hunger-decay
+                // tick, not just coin/XP changes) silently clobber a
+                // concurrently-updated real balance or progression from
+                // another app/tab.
                 await repository.saveSnapshot(snapshot);
                 // Inventory is deliberately NOT synced here. It used to be
                 // sent as a full delete-all-then-insert (later upsert+
@@ -401,6 +403,55 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
             }
         } catch (e) {
             console.error('Failed to persist purchase', e);
+        }
+    };
+
+    // Persists an XP gain (and its coupled level-up coin reward, if the
+    // gain crosses the threshold) as one atomic server-side operation.
+    // The local `setStats` update in `addXP` below is only an OPTIMISTIC
+    // guess -- it decides whether to show a level-up locally using this
+    // tab's own possibly-stale xp/level, the exact class of race this
+    // phase closes. Once the server call resolves, local `stats` is
+    // reconciled to its authoritative xp/level/coins, so a wrong local
+    // guess (e.g. this tab thought it leveled up but another app/tab's
+    // concurrent XP gain had already consumed the threshold, or vice
+    // versa) never becomes the persisted -- or, for long, the displayed
+    // -- truth.
+    const persistXPDelta = async (delta: number, optimisticCoinsDelta: number, optimisticStats: PetStats) => {
+        if (!userId) return;
+        try {
+            if (repository.addXP) {
+                const result = await repository.addXP(userId, delta);
+                setStats(prev => ({ ...prev, xp: result.xp, level: result.level, coins: result.coins }));
+            } else {
+                // Backward-compatible fallback for a host repository that
+                // hasn't implemented addXP yet: persist the optimistic
+                // xp/level/coins immediately via the pre-0.9.0 path. Best-
+                // effort only for xp/level/coins specifically -- a host
+                // already using this package's save_pet_snapshot-backed
+                // saveSnapshot (every shipped host is) treats those three
+                // fields as a no-op there regardless (see saveSnapshot's
+                // own contract doc).
+                if (optimisticCoinsDelta !== 0) {
+                    await persistCoinsDelta(optimisticCoinsDelta, optimisticStats);
+                }
+                const payload = latestPersistPayloadRef.current;
+                const snapshot: PetSaveSnapshot = {
+                    globalUserId: userId,
+                    stats: optimisticStats,
+                    identity: {
+                        petName: payload.hasAdoptedPet ? payload.petName : '',
+                        selectedPetId: payload.petName,
+                        isSleeping: payload.isSleeping,
+                        activeBallId: payload.activeBallId,
+                        activeBedId: payload.activeBedId,
+                    },
+                    updatedAt: new Date().toISOString(),
+                };
+                await repository.saveSnapshot(snapshot);
+            }
+        } catch (e) {
+            console.error('Failed to persist XP mutation', e);
         }
     };
 
@@ -764,13 +815,12 @@ export const SharedPetProvider: React.FC<SharedPetProviderProps> = ({
             nextStats = { ...prev, xp: newXP, level: newLevel };
             return nextStats;
         });
-        // The level-up coin reward is persisted immediately as its own
-        // atomic delta -- it must never wait for (or ride along with) the
-        // debounced snapshot save, which no longer writes coins at all
-        // (see persistCoinsDelta/save_pet_snapshot).
-        if (coinsDelta !== 0) {
-            void persistCoinsDelta(coinsDelta, nextStats);
-        }
+        // XP/level and the coupled level-up coin reward are committed
+        // server-side as one atomic transaction (see persistXPDelta) --
+        // never via a separate, standalone persistCoinsDelta call here,
+        // which would let the server-side add_pet_xp RPC ALSO apply its
+        // own +50-per-level reward independently, double-granting it.
+        void persistXPDelta(amount, coinsDelta, nextStats);
     };
 
     // Coin-only earn/spend not tied to a shop purchase (e.g. a mini-game
