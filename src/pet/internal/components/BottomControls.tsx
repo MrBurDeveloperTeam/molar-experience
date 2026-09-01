@@ -143,7 +143,7 @@ const BottomControls: React.FC<BottomControlsProps> = ({
                 </span>
             </button>
 
-            <div className="flex max-h-[65dvh] origin-left scale-95 flex-col gap-1.5 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-1.5 shadow-2xl backdrop-blur-xl sm:gap-3 sm:rounded-2xl sm:p-3">
+            <div className="flex max-h-[65dvh] origin-left scale-95 flex-col gap-1.5 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.10),0_2px_6px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:gap-3 sm:rounded-2xl sm:p-3">
 
                 <button
                   onClick={handleFeedClick}
