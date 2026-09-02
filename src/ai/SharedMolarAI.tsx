@@ -72,7 +72,10 @@ export function SharedMolarAI({ adapter, disabled = false, onPetToggle, emptySta
     }
   };
 
-  const handleClear = () => setChatHistory([]);
+  const handleClear = () => {
+    setChatHistory([]);
+    adapter.reset?.();
+  };
 
   const prompts = emptyState?.prompts ?? [];
 
