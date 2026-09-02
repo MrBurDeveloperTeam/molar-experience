@@ -52,7 +52,7 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
     isEating, setIsEating,
     isPlaying, setIsPlaying,
     inventory, buyItem, consumeItem,
-    addXP, activeBallId, setActiveBallId, activeBedId, setActiveBedId,
+    addXP, addCoins, activeBallId, setActiveBallId, activeBedId, setActiveBedId,
     foodItems, isFoodLoading, currencyRate, assetUrls
   } = useGameState();
   // PERSIST-4: the poop-spawn timer is account-sensitive Pet room state
@@ -480,7 +480,12 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
     setShowPoopReward(false);
     window.setTimeout(() => setShowPoopReward(true), 0);
     window.setTimeout(() => setShowPoopReward(false), 1500);
-    setStats(prev => ({ ...prev, coins: (prev.coins || 0) + POOP_REWARD_COINS }));
+    // Routed through the runtime's atomic addCoins (repository.mutateCoins)
+    // instead of a raw setStats — a bare local setStats here is never
+    // persisted, so the next loadSnapshot hydration (re-entering Virtual
+    // Pet, F5, another tab) silently overwrites it with the still-stale
+    // authoritative DB balance.
+    addCoins(POOP_REWARD_COINS);
   };
 
 
