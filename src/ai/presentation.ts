@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { AIAdapter } from '../contracts';
 
 export interface MolarChatEmptyStatePrompt {
@@ -33,4 +34,11 @@ export interface SharedMolarAIProps {
    *  discover/copy this package's internally-bundled asset reference
    *  (e.g. Next.js/Turbopack); Vite-based hosts do not need this. */
   logoUrl?: string;
+  /** Host-supplied content rendered inside the opened chat panel, below
+   *  the messages/empty-state area and above the composer — e.g. an
+   *  app-specific support link. This package renders it as-is and never
+   *  interprets its contents; omit entirely for no change from prior
+   *  behavior (nothing rendered there). Scrolls naturally with the rest
+   *  of the panel, not a second floating layer. */
+  footerContent?: ReactNode;
 }

@@ -6,7 +6,7 @@
  * and layout is otherwise unchanged.
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { RoomType, FoodItem, Bubble, ToolType } from './types';
+import { RoomType, FoodItem, Bubble, ToolType, ExtraGame } from './types';
 import { BED_ITEMS, ROOM_THEMES, TOY_ITEMS } from './constants';
 import Pet, { PetPose } from './components/Pet';
 import StatsBar from './components/StatsBar';
@@ -39,9 +39,12 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 
 interface PetRoomProps {
   onNavigateToGame: (gameId: string) => void;
+  /** Host-local games rendered as additional Games-menu cards. See
+   *  `ExtraGame`'s own doc (types.ts). */
+  extraGames?: ExtraGame[];
 }
 
-export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
+export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame, extraGames }) => {
   // --- Custom Hooks for Logic ---
   const {
     userId,
@@ -904,7 +907,7 @@ export const PetRoom: React.FC<PetRoomProps> = ({ onNavigateToGame }) => {
       )}
 
       {currentRoom === RoomType.GAMES && (
-        <GamesMenu onStartGame={handleStartGame} />
+        <GamesMenu onStartGame={handleStartGame} extraGames={extraGames} />
       )}
 
       {/* Drag Visuals */}

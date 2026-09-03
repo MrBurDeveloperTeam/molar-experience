@@ -683,6 +683,11 @@
   }
 }
 
+.snabbb-molar-experience .molar-chat-extra-footer {
+  padding: 0.75rem 0.75rem 0;
+  position: relative;
+  z-index: 20;
+}
 .snabbb-molar-experience .molar-chat-footer {
   padding: 0.75rem;
   position: relative;

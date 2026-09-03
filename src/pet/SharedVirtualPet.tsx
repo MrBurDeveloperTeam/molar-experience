@@ -41,9 +41,9 @@ import { SharedPetProvider, useGameState } from './runtime/SharedPetRuntime';
 import { PetRoom } from './internal/PetRoom';
 import { GamePage } from './internal/components/GamePage';
 import PetAdoptionModal from './internal/components/PetAdoptionModal';
-import { RoomType, type PetAssetUrls } from './internal/types';
+import { RoomType, type PetAssetUrls, type ExtraGame } from './internal/types';
 
-export type { PetAssetUrls };
+export type { PetAssetUrls, ExtraGame };
 
 const LANDSCAPE_GAME_IDS = new Set<string>(['paccat', 'tetris']);
 
@@ -65,9 +65,10 @@ type WebkitFullscreenDocument = Document & {
 
 interface VirtualPetContentProps {
   onClose: () => void;
+  extraGames?: ExtraGame[];
 }
 
-const VirtualPetContent: React.FC<VirtualPetContentProps> = ({ onClose }) => {
+const VirtualPetContent: React.FC<VirtualPetContentProps> = ({ onClose, extraGames }) => {
   const [view, setView] = useState<'ROOM' | 'GAME'>('ROOM');
   const [activeGameId, setActiveGameId] = useState<string | null>(null);
   const [showRotateNotice, setShowRotateNotice] = useState(false);
@@ -198,7 +199,7 @@ const VirtualPetContent: React.FC<VirtualPetContentProps> = ({ onClose }) => {
       )}
 
       {view === 'ROOM' ? (
-        <PetRoom onNavigateToGame={handleNavigateToGame} />
+        <PetRoom onNavigateToGame={handleNavigateToGame} extraGames={extraGames} />
       ) : (
         <>
           <GamePage gameId={activeGameId || ''} onClose={handleCloseGame} />
@@ -254,6 +255,14 @@ export interface SharedVirtualPetProps {
    *  assets (pet spritesheets, beds, bathroom-care images). Omitted
    *  entirely reproduces exact 0.5.0 behavior. */
   assetUrls?: PetAssetUrls;
+  /** Host-local games (e.g. one that predates this package, or isn't
+   *  part of its shared catalog) rendered as additional cards in the
+   *  Games selector, after the 3 built-in games. This package never
+   *  renders, persists, or knows anything about the game itself — only
+   *  the card's label/thumbnail, and it calls `onSelect` on click. See
+   *  `ExtraGame`'s own doc. Omitted entirely reproduces exact 0.9.4
+   *  behavior (only the 3 built-in games shown). */
+  extraGames?: ExtraGame[];
 }
 
 /**
@@ -269,7 +278,7 @@ export interface SharedVirtualPetProps {
  * Phase 2 skeleton assumed before this phase's code was written) avoids
  * requiring a host to introduce a provider it doesn't otherwise need.
  */
-export function SharedVirtualPet({ isOpen, onClose, repository, userId, currencyCode, assetUrls }: SharedVirtualPetProps) {
+export function SharedVirtualPet({ isOpen, onClose, repository, userId, currencyCode, assetUrls, extraGames }: SharedVirtualPetProps) {
   useEffect(() => {
     const root = document.documentElement;
     if (isOpen) {
@@ -292,7 +301,7 @@ export function SharedVirtualPet({ isOpen, onClose, repository, userId, currency
     <div className="fixed left-0 top-0 z-[1000] h-dvh w-screen bg-black animate-in fade-in duration-200">
       <div className="w-full h-full relative">
         <SharedPetProvider repository={repository} userId={userId} currencyCode={currencyCode} assetUrls={assetUrls}>
-          <VirtualPetContent onClose={onClose} />
+          <VirtualPetContent onClose={onClose} extraGames={extraGames} />
         </SharedPetProvider>
       </div>
     </div>

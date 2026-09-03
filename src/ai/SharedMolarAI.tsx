@@ -23,7 +23,7 @@ const ERROR_TEXT = 'SNAI Error: Unable to process request.';
  * host's `adapter.sendMessage()` implementation; this component only ever
  * sees the final `AIResponse.text`.
  */
-export function SharedMolarAI({ adapter, disabled = false, onPetToggle, emptyState, logoUrl }: SharedMolarAIProps) {
+export function SharedMolarAI({ adapter, disabled = false, onPetToggle, emptyState, logoUrl, footerContent }: SharedMolarAIProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<AIMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -188,6 +188,12 @@ export function SharedMolarAI({ adapter, disabled = false, onPetToggle, emptySta
                 <div ref={chatEndRef} />
               </div>
             </div>
+
+            {footerContent && (
+              <div className="molar-chat-extra-footer">
+                {footerContent}
+              </div>
+            )}
 
             <div className="molar-chat-footer">
               <form onSubmit={handleSendMessage} className="molar-chat-input-form">

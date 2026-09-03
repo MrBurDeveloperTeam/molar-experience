@@ -37,6 +37,30 @@ export interface PetAssetUrls {
   };
 }
 
+/**
+ * A host-local game the shared Games selector renders as an additional
+ * card after the 3 built-in games (Flappy Cat / Pac-Cat / Tetris) — e.g.
+ * a host-specific game that predates this package or isn't part of its
+ * shared catalog. The shared package never sees the game's own UI,
+ * assets, or state; it only renders this descriptor's presentation and
+ * calls `onSelect` on click. The host owns opening/closing/persisting
+ * everything about the game itself, entirely outside this package.
+ */
+export interface ExtraGame {
+  /** Stable identifier, host-local — this package never interprets it,
+   *  only uses it as a React list key. */
+  id: string;
+  /** Card label, rendered the same way as the built-in games' titles. */
+  title: string;
+  /** Card thumbnail — same treatment as the built-in games' cover
+   *  images (rounded, bordered, cover-fit background). */
+  iconUrl: string;
+  /** Called on click. The shared package does not open, render, or
+   *  track any game state for this — the host is expected to already
+   *  own its own open/close UI, triggered from here. */
+  onSelect: () => void;
+}
+
 export enum RoomType {
   BEDROOM = 'BEDROOM',
   KITCHEN = 'KITCHEN',

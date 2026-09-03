@@ -9,7 +9,7 @@
  */
 import React, { useRef } from 'react';
 import { Plus } from 'lucide-react';
-import { FoodItem, ToolType } from '../types';
+import { FoodItem, ToolType, ExtraGame } from '../types';
 import { useGameState } from '../../runtime/SharedPetRuntime';
 import soapUrl from '../../../assets/pet/soap.png';
 import showerUrl from '../../../assets/pet/shower.png';
@@ -167,9 +167,12 @@ export const BathroomMenu: React.FC<BathroomMenuProps> = ({ onDragStart, isSoape
 
 interface GamesMenuProps {
     onStartGame: (gameId: string) => void;
+    /** Host-local games rendered as additional cards after the 3 built-in
+     *  ones, same visual treatment. See `ExtraGame`'s own doc (types.ts). */
+    extraGames?: ExtraGame[];
 }
 
-export const GamesMenu: React.FC<GamesMenuProps> = ({ onStartGame }) => (
+export const GamesMenu: React.FC<GamesMenuProps> = ({ onStartGame, extraGames }) => (
     <div className="absolute bottom-6 left-0 right-0 z-30 flex justify-center animate-in slide-in-from-bottom-10 fade-in duration-300">
         <div className="bg-violet-900/60 backdrop-blur-xl p-4 rounded-3xl shadow-xl border border-violet-500/50 flex gap-4">
             <button
@@ -204,6 +207,20 @@ export const GamesMenu: React.FC<GamesMenuProps> = ({ onStartGame }) => (
                 />
                 <span className="text-[10px] font-black text-white mt-1.5 uppercase tracking-wide drop-shadow-md">Tetris</span>
             </button>
+
+            {(extraGames ?? []).map((game) => (
+                <button
+                    key={game.id}
+                    onClick={game.onSelect}
+                    className="flex flex-col items-center group transition-all duration-200 ease-out hover:scale-105 active:scale-95"
+                >
+                    <div
+                        className="w-20 h-20 bg-cover bg-center rounded-2xl shadow-lg flex items-center justify-center text-3xl font-black text-white group-hover:-rotate-12 transition-transform duration-200 ease-out border-4 border-white/50"
+                        style={{ backgroundImage: `url('${game.iconUrl}')` }}
+                    />
+                    <span className="text-[10px] font-black text-white mt-1.5 uppercase tracking-wide drop-shadow-md">{game.title}</span>
+                </button>
+            ))}
         </div>
     </div>
 );
