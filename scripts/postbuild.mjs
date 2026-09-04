@@ -169,3 +169,169 @@ writeFileSync(
   'utf8'
 );
 console.log(`[postbuild] appended ${resetRules.length} unlayered transform-compat selector(s) to ${cssOut}`);
+
+// --- Tailwind v3-host FULL Shared Pet theme + utility compatibility ---
+//
+// The transform-compat section above fixes the one already-known
+// composite `transform` collision. It does NOT fix the much larger set
+// of collisions found across the Virtual Pet Back button, Stats HUD,
+// Coin indicator, Level indicator, and Shop (see
+// SHARED-PET-TAILWIND-V3-COMPATIBILITY-AUDIT-2's own write-up): a
+// Tailwind-v3 host that happens to retain source files containing the
+// SAME utility class names this package's ported Pet components use
+// (background/border/shadow/backdrop-filter/gradient/SVG fill-stroke
+// utilities — not just transform-family ones) compiles those class names
+// into its OWN unlayered CSS. Per the CSS Cascade Layers spec, an
+// unlayered declaration always outranks a layered one for the same
+// property on the same element regardless of source order or
+// specificity — so a v3 host's own (differently-computed, often
+// incomplete) utility declaration silently wins over this package's
+// correct but layered (`@layer theme`/`@layer utilities`) declaration
+// for every shared class name.
+//
+// Fix: emit TWO more unlayered, `.snabbb-molar-experience`-scoped
+// sections, both generated directly from the compiled CSS above (never
+// hand-maintained, never a class allowlist):
+//
+// 1. THEME TOKEN COMPATIBILITY — clones every CSS custom-property
+//    declaration from `@layer theme` (Tailwind v4's `--color-*`,
+//    `--radius-*`, `--text-*`, etc. design tokens) into a single
+//    unlayered rule scoped to a DOUBLED selector
+//    (`.snabbb-molar-experience.snabbb-molar-experience`) rather than
+//    the plain single-class selector — a deliberate higher-specificity
+//    margin so this can never tie against a host's own unlayered
+//    single-class/`:root`-level declaration of the same custom-property
+//    name. This is a REAL, confirmed collision (not hypothetical):
+//    Appointment's own `--radius-*` design tokens happen to share
+//    Tailwind v4's reserved theme-token prefix, and (being unlayered on
+//    `:root`) would otherwise always win over this package's own
+//    (layered) `--radius-xl: 0.75rem` etc, silently resizing every
+//    `rounded-xl`/`rounded-2xl`/`rounded-lg` surface in the ported Pet
+//    UI to the host's own corner-radius scale instead of Tailwind's.
+//    `assertOnlyCustomProperties` below is a hard runtime guard (not
+//    just a comment) that `@layer theme` never contains anything but
+//    `--`-prefixed declarations — if a future Tailwind upgrade ever adds
+//    non-custom-property theme output, the build fails loudly instead of
+//    silently cloning something unintended.
+//
+// 2. UTILITY COMPATIBILITY — clones every rule from `@layer utilities`
+//    (selector, full declaration list — including any nested `@supports`
+//    progressive-enhancement fallback already inside a rule's own body —
+//    in original order), preserving any enclosing `@media`/`@supports`/
+//    `@container` condition exactly (including nested combinations, e.g.
+//    an `@supports` block that itself wraps a full rule inside an
+//    `@media` block — confirmed to occur in the compiled output for the
+//    `hover:` color-mix fallback rules). This is the systemic fix for
+//    every other collision class found in the audit (backgrounds,
+//    borders, shadows, backdrop-filter, gradients, SVG fill/stroke) — it
+//    does not special-case gradients or any other specific property; it
+//    mechanically reproduces the ENTIRE utilities surface this package
+//    ships, unlayered, so it can never drift out of sync as new Pet
+//    components/utilities are added.
+//
+// Both sections stay scoped under `.snabbb-molar-experience` — never a
+// bare `.utility` selector — so they can only ever affect this package's
+// own mounted surface, never a host's unrelated UI. `@layer properties`
+// (Tailwind v4's internal `--tw-*` working-variable initialization) is
+// deliberately left untouched: those variables only ever feed OTHER
+// `--tw-*`-consuming declarations that are themselves already covered by
+// the utility clone above, and a Tailwind-v3 host's own `--tw-*`
+// Preflight reset initializes the same names to the same harmless
+// defaults (confirmed by the audit) — there is no visible collision to
+// fix there, so unlayering `@layer properties` would only add dead
+// weight, not fix anything.
+function assertOnlyCustomProperties(rule) {
+  rule.walkDecls((decl) => {
+    if (!decl.prop.startsWith('--')) {
+      throw new Error(
+        `[postbuild] theme-compat: non-custom-property declaration found in @layer theme (${decl.prop}) — refusing to broaden the clone without explicit review`
+      );
+    }
+  });
+}
+
+const themeDecls = [];
+scopedRoot.walkAtRules('layer', (layerRule) => {
+  if (layerRule.params !== 'theme') return;
+  layerRule.each((node) => {
+    if (node.type !== 'rule') {
+      throw new Error(
+        `[postbuild] theme-compat: unexpected non-rule node inside @layer theme (${node.type}) — refusing to broaden the clone without explicit review`
+      );
+    }
+    assertOnlyCustomProperties(node);
+    node.walkDecls((decl) => {
+      themeDecls.push(`  ${decl.prop}: ${decl.value};`);
+    });
+  });
+});
+
+if (themeDecls.length === 0) {
+  throw new Error('[postbuild] theme-compat: no theme custom-property declarations found — refusing to emit an empty/unproven compatibility section');
+}
+
+const themeCompatCss = `.snabbb-molar-experience.snabbb-molar-experience {\n${themeDecls.join('\n')}\n}\n`;
+
+// Generic conditional-wrapper-preserving utility clone. Recurses into any
+// of the three standard CSS conditional-group at-rules encountered
+// wrapping a rule (confirmed present in the compiled output: `@media`
+// alone, and `@supports` nested inside `@media`); `@container` is
+// supported the same way even though not currently emitted, since a
+// future Tailwind/component change could introduce one. Any OTHER
+// at-rule type encountered at this level (i.e. one this package's own
+// compiled utilities layer has never been proven to contain) fails the
+// build rather than being silently dropped or mis-cloned.
+const CONDITIONAL_WRAPPERS = new Set(['media', 'supports', 'container']);
+const utilityClones = [];
+
+function collectUtilityClones(container, wrappers) {
+  container.each((node) => {
+    if (node.type === 'atrule' && CONDITIONAL_WRAPPERS.has(node.name)) {
+      collectUtilityClones(node, [...wrappers, { name: node.name, params: node.params }]);
+      return;
+    }
+    if (node.type === 'rule') {
+      utilityClones.push({ text: node.toString(), wrappers });
+      return;
+    }
+    throw new Error(
+      `[postbuild] utility-compat: unexpected node inside @layer utilities (${node.type === 'atrule' ? `@${node.name}` : node.type}) — refusing to clone without explicit review`
+    );
+  });
+}
+
+scopedRoot.walkAtRules('layer', (layerRule) => {
+  if (layerRule.params !== 'utilities') return;
+  collectUtilityClones(layerRule, []);
+});
+
+if (utilityClones.length === 0) {
+  throw new Error('[postbuild] utility-compat: no utility rules found — refusing to emit an empty/unproven compatibility section');
+}
+
+const byWrapperStack = new Map();
+for (const { text, wrappers } of utilityClones) {
+  const key = JSON.stringify(wrappers);
+  if (!byWrapperStack.has(key)) byWrapperStack.set(key, { wrappers, rules: [] });
+  byWrapperStack.get(key).rules.push(text);
+}
+
+let utilityCompatCss = '';
+for (const { wrappers, rules } of byWrapperStack.values()) {
+  let body = rules.join('\n');
+  for (let i = wrappers.length - 1; i >= 0; i -= 1) {
+    const w = wrappers[i];
+    body = `@${w.name} ${w.params} {\n${body}\n}`;
+  }
+  utilityCompatCss += `${body}\n\n`;
+}
+
+const withTransformReset = readFileSync(cssOut, 'utf8');
+writeFileSync(
+  cssOut,
+  `${withTransformReset}\n/* ==========================================================================\n   Tailwind v3-host Shared Pet THEME TOKEN compatibility — deliberately\n   UNLAYERED, scoped to a doubled\n   .snabbb-molar-experience.snabbb-molar-experience selector (a deliberate\n   higher-specificity margin against a host's own unlayered same-named\n   token declaration — see this section's own doc comment above). Cloned\n   directly from @layer theme's actual compiled custom-property\n   declarations — do not hand-edit, rerun the build. Clones ${themeDecls.length} custom\n   propert${themeDecls.length === 1 ? 'y' : 'ies'}.\n   ========================================================================== */\n\n${themeCompatCss}\n/* ==========================================================================\n   Tailwind v3-host Shared Pet UTILITY compatibility — deliberately\n   UNLAYERED clone of every rule in @layer utilities (selector + full\n   declaration list, any nested @supports/@media/@container condition\n   preserved) — see this section's own doc comment above for the full\n   mechanism. Generated from the actual compiled output — do not\n   hand-edit, rerun the build. Clones ${utilityClones.length} rule(s).\n   ========================================================================== */\n\n${utilityCompatCss}`,
+  'utf8'
+);
+console.log(
+  `[postbuild] appended ${themeDecls.length} unlayered theme-compat custom propert${themeDecls.length === 1 ? 'y' : 'ies'} and ${utilityClones.length} unlayered utility-compat rule(s) to ${cssOut}`
+);
