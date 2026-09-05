@@ -250,6 +250,25 @@ function assertOnlyCustomProperties(rule) {
   });
 }
 
+// Structural assertion: the flattening below assumes every declaration
+// collected from @layer theme belongs to the ONE Shared root selector
+// (postcss-prefix-selector's own `:root`/`:host` -> `.snabbb-molar-experience`
+// rewrite above can legitimately produce a duplicated selector list, e.g.
+// `.snabbb-molar-experience, .snabbb-molar-experience`, from mapping both
+// `:root` and `:host` to the same class — that's fine to flatten). If a
+// FUTURE Tailwind/build change ever produced a theme rule for any OTHER
+// selector, silently merging its declarations into the single compat
+// root would misattribute them. Fail loudly instead.
+function assertExpectedThemeSelector(rule) {
+  const parts = rule.selector.split(',').map((s) => s.trim());
+  const unexpected = parts.filter((s) => s !== '.snabbb-molar-experience');
+  if (unexpected.length > 0) {
+    throw new Error(
+      `[postbuild] theme-compat: @layer theme rule uses unexpected selector(s) [${unexpected.join(', ')}] (full selector: "${rule.selector}") — refusing to flatten into the single compat root without explicit review`
+    );
+  }
+}
+
 const themeDecls = [];
 scopedRoot.walkAtRules('layer', (layerRule) => {
   if (layerRule.params !== 'theme') return;
@@ -259,6 +278,7 @@ scopedRoot.walkAtRules('layer', (layerRule) => {
         `[postbuild] theme-compat: unexpected non-rule node inside @layer theme (${node.type}) — refusing to broaden the clone without explicit review`
       );
     }
+    assertExpectedThemeSelector(node);
     assertOnlyCustomProperties(node);
     node.walkDecls((decl) => {
       themeDecls.push(`  ${decl.prop}: ${decl.value};`);
@@ -309,16 +329,23 @@ if (utilityClones.length === 0) {
   throw new Error('[postbuild] utility-compat: no utility rules found — refusing to emit an empty/unproven compatibility section');
 }
 
-const byWrapperStack = new Map();
-for (const { text, wrappers } of utilityClones) {
-  const key = JSON.stringify(wrappers);
-  if (!byWrapperStack.has(key)) byWrapperStack.set(key, { wrappers, rules: [] });
-  byWrapperStack.get(key).rules.push(text);
-}
-
+// Emit sequentially, in the exact order utilityClones was collected in
+// (the original @layer utilities traversal order) — each rule is
+// re-wrapped in its own recorded conditional-ancestor stack and appended
+// immediately. Deliberately NOT grouped/bucketed by wrapper stack first
+// (a prior version of this script did that via a Map keyed on the
+// wrapper stack, which pulled every rule sharing a wrapper together —
+// e.g. every `@media (hover: hover)`-wrapped rule — out of its original
+// interleaved position relative to differently-wrapped or unwrapped
+// rules elsewhere in the utilities layer, silently reordering the
+// cascade for ~90 rules from index 511 onward when checked against the
+// real compiled 0.9.6 output). Cascade order among same-specificity,
+// same-layer-status (here: both unlayered) rules is source order, so
+// preserving the original traversal order is required for correctness,
+// not just style.
 let utilityCompatCss = '';
-for (const { wrappers, rules } of byWrapperStack.values()) {
-  let body = rules.join('\n');
+for (const { text, wrappers } of utilityClones) {
+  let body = text;
   for (let i = wrappers.length - 1; i >= 0; i -= 1) {
     const w = wrappers[i];
     body = `@${w.name} ${w.params} {\n${body}\n}`;
